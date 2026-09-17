@@ -1,0 +1,37 @@
+name = "integration-lab"
+compatibility_date = "2026-09-01"
+pages_build_output_dir = "public"
+
+# ---------------------------------------------------------------------------
+# Non-secret config. Set PUBLIC_ORIGIN to the pages.dev URL first, then change
+# it to the custom domain once DNS is live — it must match the redirect URI
+# registered in Google Cloud Console exactly, including scheme and no trailing
+# slash.
+# ---------------------------------------------------------------------------
+[vars]
+PUBLIC_ORIGIN = "https://integration-lab.pages.dev"
+
+# ---------------------------------------------------------------------------
+# KV — stores recent webhook deliveries so the live trace panel has something
+# to show, and so a redelivered message id is recognised as a duplicate.
+#
+#   npx wrangler kv namespace create INBOX
+#
+# then paste the returned id below.
+# ---------------------------------------------------------------------------
+[[kv_namespaces]]
+binding = "INBOX"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# ---------------------------------------------------------------------------
+# Secrets are NOT set here — this file is committed to git.
+# Set each one with:
+#
+#   npx wrangler pages secret put GOOGLE_CLIENT_SECRET
+#   npx wrangler pages secret put SESSION_SECRET
+#   npx wrangler pages secret put META_APP_SECRET
+#   npx wrangler pages secret put META_VERIFY_TOKEN
+#   npx wrangler pages secret put OPENAI_API_KEY
+#
+# GOOGLE_CLIENT_ID is not a secret and can live in [vars] if you prefer.
+# ---------------------------------------------------------------------------

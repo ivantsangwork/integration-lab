@@ -1,0 +1,7 @@
+# Copy to .dev.vars for local `wrangler pages dev`. .dev.vars is gitignored.
+SESSION_SECRET="run: openssl rand -base64 32"
+GOOGLE_CLIENT_ID="xxxxx.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET="..."
+META_APP_SECRET="..."
+META_VERIFY_TOKEN="pick-any-string"
+PUBLIC_ORIGIN="http://localhost:8788"

@@ -1,0 +1,10 @@
+# Normalise all text to LF inside the repository.
+# These files are deployed to Linux (Cloudflare Workers runtime), so LF is
+# correct everywhere and this keeps diffs clean for anyone reading the repo.
+* text=auto eol=lf
+
+# Binary — never touch these.
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
