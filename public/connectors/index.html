@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Connector Architecture Bench</title>
+<meta name="description" content="Bench 06 — when point-to-point integration stops scaling, what a hub costs to introduce, and the exact crossover point.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<link rel="stylesheet" href="/assets/lab.css">
+<style>
+  .aim{background:var(--surface); border:1px solid var(--rule); border-left:3px solid var(--accent);
+    border-radius:0 10px 10px 0; padding:20px 22px}
+  .aim .q{font-family:var(--serif); font-size:1.18rem; line-height:1.5; color:var(--ink)}
+  .aim dl{display:grid; grid-template-columns:auto 1fr; gap:6px 16px; margin:14px 0 0;
+    font-size:.82rem; font-family:var(--mono)}
+  .aim dt{color:var(--ink-3)} .aim dd{margin:0; color:var(--ink-2)}
+
+  .ctrls{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:18px}
+  .sl label{display:flex; justify-content:space-between; font-family:var(--mono); font-size:.78rem;
+    color:var(--ink-2); margin-bottom:7px}
+  .sl label b{color:var(--accent); font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%; accent-color:var(--accent); height:22px}
+
+  .vs{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1px;
+    background:var(--con-rule); border:1px solid var(--con-rule); border-radius:10px 10px 0 0; overflow:hidden}
+  @media (max-width:760px){ .vs{grid-template-columns:1fr} }
+  .pane{background:var(--con-bg); padding:13px 13px 15px}
+  .pane h4{font-family:var(--mono); font-size:.66rem; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--con-ink-2); font-weight:500; display:flex; justify-content:space-between; gap:8px}
+  .pane h4 b{font-variant-numeric:tabular-nums}
+  .pane.mesh h4 b{color:var(--con-crit)}
+  .pane.hub h4 b{color:var(--con-ok)}
+  .pane svg{display:block; width:100%; height:auto; margin-top:10px}
+  .node{fill:var(--con-bg-2); stroke:var(--con-ink-2)}
+  .node-h{fill:#241708; stroke:var(--con-acc); stroke-width:1.6}
+  .nlab{fill:var(--con-ink-2); font-family:var(--mono); font-size:8.5px}
+  .edge{stroke:var(--con-crit); stroke-width:.85; opacity:.5; fill:none}
+  .edge-h{stroke:var(--con-ok); stroke-width:1.1; opacity:.75; fill:none}
+  .caption{font-family:var(--mono); font-size:.66rem; color:var(--con-ink-2); margin-top:9px; line-height:1.5}
+
+  .steps{counter-reset:s; display:flex; flex-direction:column; gap:16px}
+  .step{counter-increment:s; display:grid; grid-template-columns:30px 1fr; gap:14px}
+  .step::before{content:counter(s); font-family:var(--mono); font-size:.8rem; color:var(--accent);
+    border:1px solid var(--rule-2); border-radius:50%; width:28px; height:28px;
+    display:grid; place-items:center}
+  .step h4{font-size:.95rem}
+  .step p{font-size:.87rem; color:var(--ink-2); margin-top:5px}
+
+  .uses{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px}
+  .use{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:19px}
+  .use .role{font-family:var(--mono); font-size:.64rem; text-transform:uppercase;
+    letter-spacing:.08em; color:var(--accent)}
+  .use h4{font-size:1rem; margin-top:5px}
+  .use p{font-size:.86rem; color:var(--ink-2); margin-top:9px}
+  .use .out{margin-top:12px; padding-top:11px; border-top:1px dashed var(--rule-2);
+    font-family:var(--mono); font-size:.74rem; color:var(--ink-3)}
+  .use .out b{color:var(--ink-2); font-weight:500}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap topin">
+    <a class="brand" href="/"><span class="dot"></span>Integration&nbsp;Lab</a>
+    <span class="crumb">/ bench 06 — connector architecture</span>
+    <span class="chip live">live</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- ===================== 1. AIM ===================== -->
+  <section><div class="wrap">
+    <div class="lab">Bench 06</div>
+    <h1 style="margin-top:12px">Connector architecture</h1>
+
+    <div class="aim" style="margin-top:24px; max-width:76ch">
+      <div class="lab" style="margin-bottom:10px">Testing aim</div>
+      <p class="q">At what point does wiring each source directly to each consumer stop being the cheaper option — and what does introducing a hub actually cost when it isn’t yet warranted?</p>
+      <dl>
+        <dt>measure</dt><dd>connections to build and maintain, as sources and consumers grow</dd>
+        <dt>hypothesis</dt><dd>point-to-point is O(S×C); a canonical hub is O(S+C)</dd>
+        <dt>looking for</dt><dd>the exact crossover, not a hand-wave about “it scales better”</dd>
+      </dl>
+    </div>
+  </div></section>
+
+  <!-- ===================== 2. PAIN POINT ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Pain point</div>
+      <h2>Adding a source shouldn’t mean editing every consumer</h2>
+    </div>
+    <div class="prose">
+      <p>Point-to-point integration is always right at the start. Two sources, one consumer, two pieces of glue — a hub would be ceremony. The trouble is that nothing announces the moment it stops being right.</p>
+      <p><strong>CryptoFundingWatch has five sources and three consumers</strong> — the scoring engine, the live view, and the alerting path. Wired directly, that’s fifteen pieces of integration, and each new venue adds three more. Worse, every consumer has to learn that Kraken calls Bitcoin XBT and Hyperliquid quotes hourly. The knowledge leaks everywhere.</p>
+      <p><strong>LatticePulse is the same shape with different sources</strong> — four feeds into the heatmap, the alert engine, and the insider rankings. Twelve connections, and the SEC filing parser’s quirks end up duplicated in three places, drifting apart as each is patched separately.</p>
+      <p>The failure mode isn’t that it’s slow to build. It’s that <strong>a bug fixed in one path stays broken in the others</strong>, and nobody notices until the numbers disagree.</p>
+    </div>
+  </div></section>
+
+  <!-- ===================== 3. ARCHITECTURE ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Solution architecture</div>
+      <h2>One canonical model in the middle</h2>
+      <p>Sources translate inward, consumers read outward, and neither knows the other exists. The hub isn’t infrastructure — it’s the canonical model from <a href="/schemas/">bench 02</a> given a place to live.</p>
+    </div>
+    <div class="diagram">
+      <svg viewBox="0 0 900 250" role="img" aria-label="Hub architecture: sources pass through adapters into a canonical store, from which consumers read. Adding a source adds one adapter; adding a consumer adds one reader.">
+        <text class="dttl" x="8" y="18">SOURCES</text>
+        <text class="dttl" x="258" y="18">ADAPTERS (write side)</text>
+        <text class="dttl" x="494" y="18">CANONICAL STORE</text>
+        <text class="dttl" x="724" y="18">CONSUMERS (read side)</text>
+
+        <rect class="dbox" x="8" y="34" width="132" height="28" rx="5"/><text class="dsub" x="20" y="52">binance</text>
+        <rect class="dbox" x="8" y="70" width="132" height="28" rx="5"/><text class="dsub" x="20" y="88">okx</text>
+        <rect class="dbox" x="8" y="106" width="132" height="28" rx="5"/><text class="dsub" x="20" y="124">hyperliquid</text>
+        <rect class="dbox" x="8" y="142" width="132" height="28" rx="5"/><text class="dsub" x="20" y="160">sec form 4</text>
+        <rect class="dbox" x="8" y="178" width="132" height="28" rx="5"/><text class="dsub" x="20" y="196">reddit</text>
+
+        <rect class="dbox-a" x="258" y="34" width="176" height="172" rx="7"/>
+        <text class="dlab" x="274" y="60">One adapter per source</text>
+        <text class="dsub" x="274" y="84">raw → canonical</text>
+        <text class="dsub" x="274" y="102">pure function</text>
+        <text class="dsub" x="274" y="120">validated on arrival</text>
+        <text class="dsub" x="274" y="138">provenance attached</text>
+        <text class="dsub" x="274" y="164" style="fill:var(--accent)">the only place that knows</text>
+        <text class="dsub" x="274" y="182" style="fill:var(--accent)">this source is special</text>
+
+        <rect class="dbox-a" x="494" y="66" width="164" height="108" rx="7"/>
+        <text class="dlab" x="510" y="92">Canonical model</text>
+        <text class="dsub" x="510" y="114">one shape</text>
+        <text class="dsub" x="510" y="132">one identifier space</text>
+        <text class="dsub" x="510" y="150">one clock</text>
+
+        <rect class="dbox" x="724" y="48" width="168" height="40" rx="5"/>
+        <text class="dlab" x="740" y="66">Scoring engine</text><text class="dsub" x="740" y="80">reads canonical only</text>
+        <rect class="dbox" x="724" y="100" width="168" height="40" rx="5"/>
+        <text class="dlab" x="740" y="118">Live view</text><text class="dsub" x="740" y="132">reads canonical only</text>
+        <rect class="dbox" x="724" y="152" width="168" height="40" rx="5"/>
+        <text class="dlab" x="740" y="170">Alerting</text><text class="dsub" x="740" y="184">reads canonical only</text>
+
+        <path class="dline" d="M140 48 L258 70"/>
+        <path class="dline" d="M140 84 L258 92"/>
+        <path class="dline" d="M140 120 L258 114"/>
+        <path class="dline" d="M140 156 L258 136"/>
+        <path class="dline" d="M140 192 L258 158"/>
+
+        <path class="dline-a" d="M434 120 L494 120"/><path class="dline-a" d="M486 116 l8 4 -8 4"/>
+        <path class="dline-a" d="M658 110 L724 68"/><path class="dline-a" d="M716 64 l9 4 -6 7"/>
+        <path class="dline-a" d="M658 120 L724 120"/><path class="dline-a" d="M716 116 l8 4 -8 4"/>
+        <path class="dline-a" d="M658 132 L724 172"/><path class="dline-a" d="M716 166 l9 6 -6 6"/>
+
+        <text class="dsub" x="258" y="234">adding a source = one adapter, nothing on the read side changes</text>
+        <text class="dsub" x="258" y="248" style="fill:var(--accent)">adding a consumer = one reader, nothing on the write side changes</text>
+      </svg>
+    </div>
+  </div></section>
+
+  <!-- ===================== 4. LIVE BENCH ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Live bench</div>
+      <h2>Drag the counts and watch the mesh explode</h2>
+      <p>Same sources, same consumers, two wiring strategies. The connection counts are the thing to watch — the pictures are just how it feels.</p>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <div class="ctrls">
+        <div class="sl">
+          <label for="s-src">sources <b id="v-src">5</b></label>
+          <input type="range" id="s-src" min="2" max="12" value="5">
+        </div>
+        <div class="sl">
+          <label for="s-con">consumers <b id="v-con">3</b></label>
+          <input type="range" id="s-con" min="1" max="8" value="3">
+        </div>
+        <div class="sl">
+          <label>verdict</label>
+          <p id="verdict" style="font-family:var(--mono); font-size:.8rem; color:var(--ink-2); line-height:1.45"></p>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="vs">
+        <div class="pane mesh">
+          <h4><span>Point-to-point</span><b id="n-mesh">15 connections</b></h4>
+          <svg id="svg-mesh" viewBox="0 0 400 260" role="img" aria-label="Point-to-point wiring diagram"></svg>
+          <p class="caption" id="cap-mesh"></p>
+        </div>
+        <div class="pane hub">
+          <h4><span>Canonical hub</span><b id="n-hub">8 connections</b></h4>
+          <svg id="svg-hub" viewBox="0 0 400 260" role="img" aria-label="Hub and spoke wiring diagram"></svg>
+          <p class="caption" id="cap-hub"></p>
+        </div>
+      </div>
+
+      <div class="console" style="border-radius:0 0 10px 10px; border-top:0">
+        <div class="meters">
+          <div class="meter"><div class="l">Point-to-point</div><div class="v num c" id="m-mesh">—</div></div>
+          <div class="meter"><div class="l">Hub</div><div class="v num g" id="m-hub">—</div></div>
+          <div class="meter"><div class="l">Saved</div><div class="v num" id="m-diff">—</div></div>
+          <div class="meter"><div class="l">Cost of one more source</div><div class="v num" id="m-add">—</div></div>
+        </div>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- ===================== 5. IMPLEMENTATION ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Implementation process</div>
+      <h2>Introducing the hub without a rewrite</h2>
+      <p>The migration is what stops people, not the design. It can be done incrementally — the hub starts as one more consumer.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div>
+        <h4>Write the canonical model first, from the consumers</h4>
+        <p>Same rule as <a href="/schemas/">bench 02</a>. If the model is derived from whichever source you happen to migrate first, every later source arrives as an awkward special case.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Stand the hub up alongside, reading from existing paths</h4>
+        <p>No consumer switches yet. The hub populates in parallel with the point-to-point wiring, which keeps running. Nothing is at risk because nothing depends on it.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Reconcile the two for a full cycle before cutting over</h4>
+        <p>Compare hub output against each direct path and account for every difference. Disagreements here are real bugs, usually in an assumption a consumer made years ago — better found now than after the old path is gone.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Move one consumer, the least critical one</h4>
+        <p>It reads from the hub; the rest stay direct. Any latency, freshness or shape problem surfaces on the consumer you can most afford to be wrong.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Migrate the rest, then delete the direct paths</h4>
+        <p>Deleting matters. A point-to-point path left in place gets quietly used, and then there are two sources of truth — which is worse than the mesh you started with.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Enforce the boundary in the build</h4>
+        <p>A lint rule or import check that prevents consumer code importing anything source-specific. Otherwise the mesh grows back one “just this once” at a time.</p>
+      </div></div>
+    </div>
+  </div></section>
+
+  <!-- ===================== 6. USE CASES ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Use cases</div>
+      <h2>Where this runs</h2>
+    </div>
+    <div class="uses">
+      <div class="use">
+        <div class="role">System A</div>
+        <h4><a href="https://cryptofundingwatch.com/" style="color:inherit">CryptoFundingWatch</a></h4>
+        <p>Five venues, three consumers. Direct wiring would be 15 connections and each new exchange would add 3 more, with venue quirks spread across all of them. Through the hub it is 8, and a sixth venue costs exactly one adapter.</p>
+        <div class="out"><b>15 → 8</b> connections · <b>+3 → +1</b> per new source</div>
+      </div>
+      <div class="use">
+        <div class="role">System B</div>
+        <h4><a href="https://latticepulse.app" style="color:inherit">LatticePulse</a></h4>
+        <p>Four feeds, three consumers — heatmap, alert engine, insider rankings. The SEC parser’s quirks previously risked living in three places and drifting apart. One write-side adapter means one place to fix them.</p>
+        <div class="out"><b>12 → 7</b> connections · one SEC parser, not three</div>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- ===================== 7. FINDINGS ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Findings</div>
+      <h2>What the bench showed</h2>
+    </div>
+    <div class="prose">
+      <p><strong>The crossover is exact, and it arrives much earlier than instinct suggests.</strong> Point-to-point costs S×C connections and a hub costs S+C, so the hub wins whenever S×C &gt; S+C — which rearranges to <strong>(S−1)(C−1) &gt; 1</strong>. At two sources and two consumers it is a genuine wash: four connections either way. At <strong>three sources and two consumers</strong> the hub is already ahead, and it never loses again.</p>
+      <p>That is a much lower bar than “wait until it hurts”. Most teams build the mesh well past the point where the hub was already cheaper, because the cost arrives as a slow tax rather than a bill.</p>
+      <p><strong>The connection count understates the real saving.</strong> Each point-to-point path carries a copy of the source’s quirks, so the true cost is S×C pieces of <em>knowledge</em>, not just wiring. Fixing a parser bug in a mesh means finding every copy; in a hub it means editing one adapter. The counts in the bench are the floor of the benefit, not the ceiling.</p>
+      <p><strong>The honest caveat:</strong> the hub adds a hop, and therefore latency and a new failure point. For CryptoFundingWatch on a 60-second cycle that is irrelevant. If the requirement were sub-second, the calculus would change — and the answer might be a hub for the slow consumers and one direct path for the fast one. Architecture is not a morality test.</p>
+    </div>
+    <p style="margin-top:22px; font-size:.87rem; color:var(--ink-2)">
+      Bench source: <a href="https://github.com/ivantsangwork/integration-lab/blob/main/public/connectors/index.html"><code>public/connectors/index.html</code></a> ·
+      Related: <a href="/schemas/">bench 02 — schema normalisation</a>
+    </p>
+    <p style="margin-top:18px"><a class="btn s" href="/">← All benches</a></p>
+  </div></section>
+
+  <footer><div class="wrap">
+    <p><b>Counts are exact; the pictures are illustrative.</b> Node positions are laid out for legibility rather than to scale, but every connection drawn is one that would have to exist, and the totals are computed, not estimated.</p>
+  </div></footer>
+
+</main>
+
+<script>
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  var W = 400, H = 260;
+
+  function ys(n, pad){
+    var out = [], usable = H - pad*2;
+    for (var i = 0; i < n; i++) out.push(n === 1 ? H/2 : pad + (usable * i) / (n-1));
+    return out;
+  }
+
+  function nodes(xs, list, cls){
+    return list.map(function(y){
+      return '<circle class="' + cls + '" cx="' + xs + '" cy="' + y.toFixed(1) + '" r="7"/>';
+    }).join("");
+  }
+
+  function draw(S, C){
+    var sy = ys(S, 24), cy = ys(C, 24), edges = "", hubEdges = "";
+
+    // ---- point-to-point: every source to every consumer ----
+    for (var i = 0; i < S; i++)
+      for (var j = 0; j < C; j++)
+        edges += '<path class="edge" d="M52 ' + sy[i].toFixed(1) + " C 160 " + sy[i].toFixed(1)
+               + ", 240 " + cy[j].toFixed(1) + ", 348 " + cy[j].toFixed(1) + '"/>';
+
+    $("svg-mesh").innerHTML = edges
+      + nodes(45, sy, "node") + nodes(355, cy, "node")
+      + '<text class="nlab" x="16" y="16">sources</text>'
+      + '<text class="nlab" x="322" y="16">consumers</text>';
+
+    // ---- hub: every source to hub, hub to every consumer ----
+    for (var a = 0; a < S; a++)
+      hubEdges += '<path class="edge-h" d="M52 ' + sy[a].toFixed(1) + " C 120 " + sy[a].toFixed(1)
+                + ", 160 " + (H/2) + ", 182 " + (H/2) + '"/>';
+    for (var b = 0; b < C; b++)
+      hubEdges += '<path class="edge-h" d="M218 ' + (H/2) + " C 240 " + (H/2)
+                + ", 280 " + cy[b].toFixed(1) + ", 348 " + cy[b].toFixed(1) + '"/>';
+
+    $("svg-hub").innerHTML = hubEdges
+      + '<rect class="node-h" x="176" y="' + (H/2 - 22) + '" width="48" height="44" rx="6"/>'
+      + '<text class="nlab" x="185" y="' + (H/2 - 2) + '" style="fill:#F0A44F">canon</text>'
+      + '<text class="nlab" x="187" y="' + (H/2 + 10) + '" style="fill:#F0A44F">model</text>'
+      + nodes(45, sy, "node") + nodes(355, cy, "node")
+      + '<text class="nlab" x="16" y="16">sources</text>'
+      + '<text class="nlab" x="322" y="16">consumers</text>';
+
+    // ---- counts ----
+    var mesh = S * C, hub = S + C, diff = mesh - hub;
+
+    $("n-mesh").textContent = mesh + " connection" + (mesh === 1 ? "" : "s");
+    $("n-hub").textContent  = hub + " connection" + (hub === 1 ? "" : "s");
+    $("m-mesh").textContent = mesh;
+    $("m-hub").textContent  = hub;
+    $("m-diff").textContent = diff > 0 ? diff + " fewer" : diff === 0 ? "even" : Math.abs(diff) + " more";
+    $("m-diff").className   = "v num" + (diff > 0 ? " g" : diff < 0 ? " c" : "");
+    $("m-add").textContent  = "+" + C + " vs +1";
+
+    $("cap-mesh").innerHTML = S + " × " + C + " = <b style=\"color:var(--con-crit)\">" + mesh
+      + "</b> paths<br>each new source adds " + C + " more";
+    $("cap-hub").innerHTML = S + " + " + C + " = <b style=\"color:var(--con-ok)\">" + hub
+      + "</b> paths<br>each new source adds 1 more";
+
+    var v = $("verdict");
+    if (diff > 0){
+      v.innerHTML = '<span style="color:var(--ok)">hub wins by ' + diff + "</span><br>(S−1)(C−1) = "
+        + ((S-1)*(C-1)) + " &gt; 1";
+    } else if (diff === 0){
+      v.innerHTML = '<span style="color:var(--warn)">a genuine wash</span><br>' + mesh + " either way — the only tie";
+    } else {
+      v.innerHTML = '<span style="color:var(--crit)">point-to-point wins</span><br>a hub here is ceremony';
+    }
+  }
+
+  function sync(){
+    var S = +$("s-src").value, C = +$("s-con").value;
+    $("v-src").textContent = S;
+    $("v-con").textContent = C;
+    draw(S, C);
+  }
+
+  $("s-src").addEventListener("input", sync);
+  $("s-con").addEventListener("input", sync);
+  sync();
+})();
+</script>
+</body>
+</html>

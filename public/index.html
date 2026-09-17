@@ -4,47 +4,52 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Integration Lab</title>
-<meta name="description" content="A testing ground for the integration techniques behind CryptoFundingWatch and LatticePulse — isolated benches for schema normalisation, retry, auth, and scoring pipelines.">
+<meta name="description" content="Seven isolated benches for the integration problems behind CryptoFundingWatch and LatticePulse — schema normalisation, retry, auth, connector architecture, drift detection.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
 <link rel="stylesheet" href="/assets/lab.css">
 <style>
-  .sys{display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:16px}
-  .syscard{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:20px;
-    display:flex; flex-direction:column; gap:12px}
-  .syscard h3{font-size:1.05rem}
+  .intro{max-width:64ch}
+  .intro h1{font-size:clamp(1.6rem,1.2rem+1.7vw,2.3rem)}
+  .intro p{margin-top:12px; color:var(--ink-2); font-size:1rem}
+
+  /* ---- the index: seven benches ---- */
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(304px,1fr)); gap:14px}
+  .bench{position:relative; display:flex; flex-direction:column; gap:10px;
+    background:var(--surface); border:1px solid var(--rule); border-radius:10px;
+    padding:18px 18px 16px; text-decoration:none; color:inherit;
+    transition:border-color .14s ease, transform .14s ease}
+  a.bench:hover{border-color:var(--accent); transform:translateY(-1px)}
+  a.bench:hover .go{color:var(--accent)}
+  .bench.off{opacity:.62}
+  .bench .row1{display:flex; align-items:center; gap:10px}
+  .bench .n{font-family:var(--mono); font-size:.76rem; color:var(--accent); font-weight:500}
+  .bench.off .n{color:var(--ink-3)}
+  .bench h3{font-size:1rem; flex:1; min-width:0}
+  .bench .aim{font-size:.875rem; color:var(--ink-2); flex:1}
+  .bench .foot{display:flex; align-items:center; gap:10px; margin-top:auto; padding-top:11px;
+    border-top:1px dashed var(--rule-2); font-family:var(--mono); font-size:.7rem; color:var(--ink-3)}
+  .bench .go{margin-left:auto; font-family:var(--sans); font-size:.78rem; color:var(--ink-3); white-space:nowrap}
+  .st{font-family:var(--mono); font-size:.6rem; text-transform:uppercase; letter-spacing:.07em;
+    padding:2px 6px; border-radius:3px; border:1px solid currentColor; white-space:nowrap}
+  .st.live{color:var(--ok)} .st.part{color:var(--warn)} .st.draft{color:var(--ink-3)}
+
+  /* ---- context strip ---- */
+  .sys{display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px}
+  .syscard{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:18px;
+    display:flex; flex-direction:column; gap:10px}
+  .syscard h3{font-size:1rem}
   .syscard h3 a{color:inherit; text-decoration:none}
   .syscard h3 a:hover{color:var(--accent)}
-  .syscard .role{font-family:var(--mono); font-size:.66rem; text-transform:uppercase;
+  .syscard .role{font-family:var(--mono); font-size:.64rem; text-transform:uppercase;
     letter-spacing:.08em; color:var(--accent)}
-  .syscard p{font-size:.88rem; color:var(--ink-2)}
-  .facts{display:grid; grid-template-columns:auto 1fr; gap:5px 14px; font-family:var(--mono);
-    font-size:.76rem; margin-top:auto; padding-top:12px; border-top:1px dashed var(--rule-2)}
+  .syscard p{font-size:.86rem; color:var(--ink-2)}
+  .facts{display:grid; grid-template-columns:auto 1fr; gap:4px 14px; font-family:var(--mono);
+    font-size:.73rem; margin-top:auto; padding-top:11px; border-top:1px dashed var(--rule-2)}
   .facts dt{color:var(--ink-3)} .facts dd{margin:0; color:var(--ink-2)}
 
-  .benches{width:100%; border-collapse:collapse}
-  .benches th{padding-bottom:10px}
-  .benches td{padding:14px 14px 14px 0}
-  .benches .n{font-family:var(--mono); color:var(--accent); font-size:.8rem; width:26px}
-  .benches .name{color:var(--ink); font-weight:500; white-space:nowrap}
-  .benches .name a{color:inherit; text-decoration:none}
-  .benches .name a:hover{color:var(--accent)}
-  .benches .aim{color:var(--ink-2)}
-  .st{font-family:var(--mono); font-size:.64rem; text-transform:uppercase; letter-spacing:.07em;
-    padding:2px 7px; border-radius:3px; border:1px solid currentColor; white-space:nowrap}
-  .st.live{color:var(--ok)} .st.draft{color:var(--ink-3)} .st.part{color:var(--warn)}
-  .feeds{font-family:var(--mono); font-size:.72rem; color:var(--ink-3); white-space:nowrap}
-  @media (max-width:820px){
-    .benches thead{display:none}
-    .benches tr{display:grid; grid-template-columns:26px 1fr auto; gap:4px 10px;
-      padding:14px 0; border-bottom:1px solid var(--rule)}
-    .benches td{padding:0; border:0}
-    .benches .aim{grid-column:2 / -1}
-    .benches .feeds{grid-column:2 / -1}
-  }
-
-  .notes li{color:var(--ink-2); font-size:.88rem; margin-bottom:9px}
+  .notes li{color:var(--ink-2); font-size:.87rem; margin-bottom:9px}
   .notes code{color:var(--ink)}
 </style>
 </head>
@@ -54,26 +59,73 @@
   <div class="wrap topin">
     <a class="brand" href="/"><span class="dot"></span>Integration&nbsp;Lab</a>
     <span class="crumb">/ engineering notebook</span>
-    <span class="chip live">7 benches</span>
+    <span class="chip live">3 live · 4 draft</span>
   </div>
 </header>
 
 <main>
 
-  <!-- ===================== WHAT THIS IS ===================== -->
+  <!-- ===================== INDEX ===================== -->
   <section><div class="wrap">
-    <div class="lab">Integration testing ground</div>
-    <h1 style="margin-top:12px">A bench for the problems two live systems keep running into.</h1>
-    <p class="lede">I run two production systems that look unrelated and turn out to be the same shape of problem: pull from many heterogeneous sources on different cadences, normalise them into one model, score, and alert. This site is where I isolate each part of that and test it on its own, before it goes anywhere near either system.</p>
-    <p class="lede" style="margin-top:12px">Each bench below states what it is trying to find out, the failure it exists because of, and what the testing actually showed. Several of them run live in the browser against real endpoints.</p>
+    <div class="intro">
+      <div class="lab">Integration testing ground</div>
+      <h1 style="margin-top:10px">Seven benches.</h1>
+      <p>Each one isolates a single integration problem that two production systems — <a href="#systems">CryptoFundingWatch and LatticePulse</a> — keep running into, states what it is trying to find out, and reports what the testing showed. Several run live in the browser against real endpoints.</p>
+    </div>
+
+    <div class="grid" style="margin-top:26px">
+
+      <a class="bench" href="/oauth/">
+        <div class="row1"><span class="n">01</span><h3>Auth &amp; token lifecycle</h3><span class="st part">bench up</span></div>
+        <p class="aim">Can a long-running poller hold third-party credentials for months without a mid-request expiry or a manual reconnect?</p>
+        <div class="foot"><span>both systems</span><span class="go">Open →</span></div>
+      </a>
+
+      <a class="bench" href="/schemas/">
+        <div class="row1"><span class="n">02</span><h3>Schema normalisation</h3><span class="st live">live</span></div>
+        <p class="aim">Can N source schemas collapse into one canonical model so that adding source N+1 touches one file and nothing downstream?</p>
+        <div class="foot"><span>both systems</span><span class="go">Open →</span></div>
+      </a>
+
+      <a class="bench" href="/retry/">
+        <div class="row1"><span class="n">03</span><h3>Retry &amp; dead letter</h3><span class="st live">live</span></div>
+        <p class="aim">When a source goes down mid-cycle, does the pipeline degrade, recover, and avoid double-applying anything?</p>
+        <div class="foot"><span>both systems</span><span class="go">Open →</span></div>
+      </a>
+
+      <a class="bench" href="/connectors/">
+        <div class="row1"><span class="n">06</span><h3>Connector architecture</h3><span class="st live">live</span></div>
+        <p class="aim">At what point does point-to-point integration stop scaling, and what does introducing a hub actually cost?</p>
+        <div class="foot"><span>both systems</span><span class="go">Open →</span></div>
+      </a>
+
+      <div class="bench off">
+        <div class="row1"><span class="n">04</span><h3>Alert delivery</h3><span class="st draft">draft</span></div>
+        <p class="aim">Does an alert survive the last mile — dedupe, ordering, and a messaging provider that rate-limits or silently drops?</p>
+        <div class="foot"><span>LatticePulse</span><span class="go">not built</span></div>
+      </div>
+
+      <div class="bench off">
+        <div class="row1"><span class="n">05</span><h3>LLM action layer</h3><span class="st draft">draft</span></div>
+        <p class="aim">Can a model be given API access without ever inventing a parameter or writing something irreversible unprompted?</p>
+        <div class="foot"><span>both systems</span><span class="go">not built</span></div>
+      </div>
+
+      <div class="bench off">
+        <div class="row1"><span class="n">07</span><h3>Reconciliation &amp; drift</h3><span class="st draft">draft</span></div>
+        <p class="aim">How fast can an undocumented upstream schema change be detected — before or after it corrupts the scored output?</p>
+        <div class="foot"><span>both systems</span><span class="go">not built</span></div>
+      </div>
+
+    </div>
   </div></section>
 
-  <!-- ===================== THE TWO SYSTEMS ===================== -->
-  <section><div class="wrap">
+  <!-- ===================== CONTEXT ===================== -->
+  <section id="systems"><div class="wrap">
     <div class="shead">
       <div class="lab">What feeds the bench</div>
       <h2>Two production systems, one architecture</h2>
-      <p>Both ingest from sources that disagree about everything — schema, units, identifiers, cadence, availability — and both have to keep producing a usable ranked view when one source misbehaves.</p>
+      <p>Both ingest from sources that disagree about everything — schema, units, identifiers, cadence, availability — and both must keep producing a usable ranked view when one source misbehaves.</p>
     </div>
 
     <div class="sys">
@@ -102,149 +154,77 @@
       </article>
     </div>
 
-    <div class="note" style="margin-top:18px"><b>Why the pairing is useful.</b> They stress the same pipeline from opposite ends. CryptoFundingWatch is numerically fussy but structurally uniform — five sources, same shape, same clock. LatticePulse is structurally chaotic — a Reddit comment and an SEC Form 4 filing have nothing in common except that both are evidence about a ticker at a point in time. A technique that survives both is probably sound.</div>
+    <div class="note" style="margin-top:16px"><b>Why the pairing is useful.</b> They stress the same pipeline from opposite ends. CryptoFundingWatch is numerically fussy but structurally uniform — five sources, same shape, same clock. LatticePulse is structurally chaotic: a Reddit comment and an SEC Form 4 filing have nothing in common except that both are evidence about a ticker at a point in time. A technique that survives both is probably sound.</div>
   </div></section>
 
-  <!-- ===================== THE SHARED PIPELINE ===================== -->
+  <!-- ===================== PIPELINE ===================== -->
   <section><div class="wrap">
     <div class="shead">
-      <div class="lab">The shape of the problem</div>
+      <div class="lab">Where the benches sit</div>
       <h2>Both systems reduce to the same five stages</h2>
-      <p>The benches map onto the stages. Where each one sits is where its failures show up.</p>
+      <p>Each bench maps onto a stage. Where it sits is where its failures show up.</p>
     </div>
     <div class="diagram">
-      <svg viewBox="0 0 960 300" role="img" aria-label="Pipeline diagram: heterogeneous sources feed adapters, which produce a canonical model, which feeds scoring and then alerting. Integration concerns attach to specific stages.">
+      <svg viewBox="0 0 960 250" role="img" aria-label="Pipeline: heterogeneous sources feed adapters producing a canonical model, which feeds deterministic scoring then alerting. Each bench number is placed under the stage it tests.">
         <text class="dttl" x="8" y="18">SOURCES</text>
         <text class="dttl" x="216" y="18">ADAPT</text>
         <text class="dttl" x="424" y="18">CANONICAL</text>
         <text class="dttl" x="632" y="18">SCORE</text>
         <text class="dttl" x="828" y="18">ACT</text>
 
-        <rect class="dbox" x="8" y="30" width="176" height="104" rx="7"/>
+        <rect class="dbox" x="8" y="30" width="176" height="92" rx="7"/>
         <text class="dlab" x="24" y="54">Heterogeneous</text>
         <text class="dsub" x="24" y="74">5 exchange APIs</text>
         <text class="dsub" x="24" y="90">2 social firehoses</text>
         <text class="dsub" x="24" y="106">2 SEC filing feeds</text>
-        <text class="dsub" x="24" y="122">every one different</text>
 
-        <rect class="dbox-a" x="216" y="30" width="176" height="104" rx="7"/>
+        <rect class="dbox-a" x="216" y="30" width="176" height="92" rx="7"/>
         <text class="dlab" x="232" y="54">One adapter each</text>
         <text class="dsub" x="232" y="74">units normalised here</text>
-        <text class="dsub" x="232" y="90">symbols mapped here</text>
-        <text class="dsub" x="232" y="106">validated on arrival</text>
-        <text class="dsub" x="232" y="122">provenance attached</text>
+        <text class="dsub" x="232" y="90">validated on arrival</text>
+        <text class="dsub" x="232" y="106">provenance attached</text>
 
-        <rect class="dbox-a" x="424" y="30" width="176" height="104" rx="7"/>
+        <rect class="dbox-a" x="424" y="30" width="176" height="92" rx="7"/>
         <text class="dlab" x="440" y="54">Canonical model</text>
         <text class="dsub" x="440" y="74">one shape, one clock</text>
         <text class="dsub" x="440" y="90">one identifier space</text>
         <text class="dsub" x="440" y="106">stale flags, not gaps</text>
-        <text class="dsub" x="440" y="122">source-agnostic</text>
 
-        <rect class="dbox" x="632" y="30" width="164" height="104" rx="7"/>
+        <rect class="dbox" x="632" y="30" width="164" height="92" rx="7"/>
         <text class="dlab" x="648" y="54">Deterministic</text>
-        <text class="dsub" x="648" y="74">spread &amp; annualised edge</text>
-        <text class="dsub" x="648" y="90">velocity vs own baseline</text>
-        <text class="dsub" x="648" y="106">fixed formula</text>
-        <text class="dsub" x="648" y="122">reproducible</text>
+        <text class="dsub" x="648" y="74">annualised edge</text>
+        <text class="dsub" x="648" y="90">velocity vs baseline</text>
+        <text class="dsub" x="648" y="106">reproducible</text>
 
-        <rect class="dbox" x="828" y="30" width="124" height="104" rx="7"/>
+        <rect class="dbox" x="828" y="30" width="124" height="92" rx="7"/>
         <text class="dlab" x="844" y="54">Rank · alert</text>
         <text class="dsub" x="844" y="74">thresholds</text>
         <text class="dsub" x="844" y="90">dedupe</text>
         <text class="dsub" x="844" y="106">delivery</text>
-        <text class="dsub" x="844" y="122">retry</text>
 
-        <path class="dline-a" d="M184 82 L216 82"/><path class="dline-a" d="M208 78 l8 4 -8 4"/>
-        <path class="dline-a" d="M392 82 L424 82"/><path class="dline-a" d="M416 78 l8 4 -8 4"/>
-        <path class="dline" d="M600 82 L632 82"/><path class="dline" d="M624 78 l8 4 -8 4"/>
-        <path class="dline" d="M796 82 L828 82"/><path class="dline" d="M820 78 l8 4 -8 4"/>
+        <path class="dline-a" d="M184 76 L216 76"/><path class="dline-a" d="M208 72 l8 4 -8 4"/>
+        <path class="dline-a" d="M392 76 L424 76"/><path class="dline-a" d="M416 72 l8 4 -8 4"/>
+        <path class="dline" d="M600 76 L632 76"/><path class="dline" d="M624 72 l8 4 -8 4"/>
+        <path class="dline" d="M796 76 L828 76"/><path class="dline" d="M820 72 l8 4 -8 4"/>
 
-        <text class="dttl" x="8" y="190">WHERE THE BENCHES SIT</text>
-        <line class="dgrid" x1="8" y1="200" x2="952" y2="200"/>
+        <line class="dgrid" x1="8" y1="160" x2="952" y2="160"/>
+        <text class="dsub" x="8"   y="184">01 auth · 03 retry</text>
+        <text class="dsub" x="8"   y="202">rate limits</text>
+        <text class="dsub" x="216" y="184">02 schema normalisation</text>
+        <text class="dsub" x="216" y="202">06 connector architecture</text>
+        <text class="dsub" x="424" y="184">07 reconciliation</text>
+        <text class="dsub" x="424" y="202">drift detection</text>
+        <text class="dsub" x="632" y="184">05 LLM action layer</text>
+        <text class="dsub" x="632" y="202">schema-validated calls</text>
+        <text class="dsub" x="828" y="184">04 alert delivery</text>
+        <text class="dsub" x="828" y="202">03 delivery retry</text>
 
-        <text class="dsub" x="8"   y="226">01 auth · 03 retry</text>
-        <text class="dsub" x="8"   y="242">rate limits</text>
-        <text class="dsub" x="216" y="226">02 schema normalisation</text>
-        <text class="dsub" x="216" y="242">06 connector architecture</text>
-        <text class="dsub" x="424" y="226">07 reconciliation</text>
-        <text class="dsub" x="424" y="242">drift detection</text>
-        <text class="dsub" x="632" y="226">05 AI action layer</text>
-        <text class="dsub" x="632" y="242">schema-validated calls</text>
-        <text class="dsub" x="828" y="226">04 messaging</text>
-        <text class="dsub" x="828" y="242">03 delivery retry</text>
-
-        <path class="dline-d" d="M60 200 L60 134"/>
-        <path class="dline-d" d="M280 200 L280 134"/>
-        <path class="dline-d" d="M480 200 L480 134"/>
-        <path class="dline-d" d="M690 200 L690 134"/>
-        <path class="dline-d" d="M870 200 L870 134"/>
+        <path class="dline-d" d="M60 160 L60 122"/>
+        <path class="dline-d" d="M280 160 L280 122"/>
+        <path class="dline-d" d="M480 160 L480 122"/>
+        <path class="dline-d" d="M690 160 L690 122"/>
+        <path class="dline-d" d="M870 160 L870 122"/>
       </svg>
-    </div>
-  </div></section>
-
-  <!-- ===================== THE BENCHES ===================== -->
-  <section><div class="wrap">
-    <div class="shead">
-      <div class="lab">The benches</div>
-      <h2>Seven questions, each tested on its own</h2>
-      <p>Isolated deliberately. A technique that only works inside a running system hasn't been tested — it's been observed.</p>
-    </div>
-    <div class="scroller">
-      <table class="benches">
-        <thead><tr><th></th><th>Bench</th><th>Testing aim</th><th>Feeds</th><th>Status</th></tr></thead>
-        <tbody>
-          <tr>
-            <td class="n">01</td>
-            <td class="name"><a href="/oauth/">Auth &amp; token lifecycle</a></td>
-            <td class="aim">Can a long-running poller hold third-party credentials for months without a mid-request expiry or a manual reconnect?</td>
-            <td class="feeds">both</td>
-            <td><span class="st part">bench up</span></td>
-          </tr>
-          <tr>
-            <td class="n">02</td>
-            <td class="name"><a href="/schemas/">Schema normalisation</a></td>
-            <td class="aim">Can N source schemas collapse into one canonical model so that adding source N+1 touches one file and nothing downstream?</td>
-            <td class="feeds">both</td>
-            <td><span class="st live">live</span></td>
-          </tr>
-          <tr>
-            <td class="n">03</td>
-            <td class="name"><a href="/retry/">Retry &amp; dead letter</a></td>
-            <td class="aim">When a source goes down mid-cycle, does the pipeline degrade, recover, and avoid double-applying anything?</td>
-            <td class="feeds">both</td>
-            <td><span class="st live">live</span></td>
-          </tr>
-          <tr>
-            <td class="n">04</td>
-            <td class="name">Alert delivery</td>
-            <td class="aim">Does an alert survive the last mile — dedupe, ordering, and a messaging provider that rate-limits or silently drops?</td>
-            <td class="feeds">LatticePulse</td>
-            <td><span class="st draft">draft</span></td>
-          </tr>
-          <tr>
-            <td class="n">05</td>
-            <td class="name">LLM action layer</td>
-            <td class="aim">Can a model be given API access without ever inventing a parameter or writing something irreversible unprompted?</td>
-            <td class="feeds">both</td>
-            <td><span class="st draft">draft</span></td>
-          </tr>
-          <tr>
-            <td class="n">06</td>
-            <td class="name">Connector architecture</td>
-            <td class="aim">At what point does point-to-point integration stop scaling, and what does the hub cost to introduce?</td>
-            <td class="feeds">both</td>
-            <td><span class="st draft">draft</span></td>
-          </tr>
-          <tr>
-            <td class="n">07</td>
-            <td class="name">Reconciliation &amp; drift</td>
-            <td class="aim">How fast can an undocumented upstream schema change be detected — before or after it corrupts the scored output?</td>
-            <td class="feeds">both</td>
-            <td><span class="st draft">draft</span></td>
-          </tr>
-        </tbody>
-      </table>
     </div>
   </div></section>
 
@@ -255,16 +235,17 @@
       <h2>Notes</h2>
     </div>
     <ul class="notes">
-      <li><b>Partial availability beats a spinner.</b> When one of five exchanges stops responding, blanking the whole view is worse than showing four live rows and one stale-flagged with its last-good timestamp. Users can reason about a known-stale number; they can't reason about an absence.</li>
-      <li><b>Normalise at the boundary or not at all.</b> Every unit conversion that leaks past the adapter — an hourly rate that reaches the scorer un-annualised — becomes a bug that only shows up on the one venue that does it differently.</li>
-      <li><b>Ragged cadence is harder than slow cadence.</b> LatticePulse polls social every few minutes and filings every 15–30. Comparing velocity across sources that sample at different rates needs the baseline to be per-source, not global.</li>
-      <li><b>A timeout is not a failure.</b> The retry bench exists because of this one — after a timeout you don't know whether the write landed, and the only safe answer is an idempotency key. <a href="/retry/">Bench 03</a> demonstrates it.</li>
-      <li><b>Deterministic scoring is a feature.</b> Both systems use fixed formulas rather than models. It means a score can be explained, reproduced, and argued with — which matters more than accuracy when someone asks why a ticker moved up the list.</li>
+      <li><b>Normalise identity and time; do not normalise meaning.</b> CryptoFundingWatch should collapse five rates into one comparable number because they measure the same quantity. LatticePulse should not — there is no honest exchange rate between an upvote and an insider purchase. <a href="/schemas/">Bench 02</a>.</li>
+      <li><b>Partial availability beats a spinner.</b> When one of five exchanges stops responding, four live rows and one stale-flagged with its last-good timestamp is more useful than a blank view. Users can reason about a known-stale number; they can't reason about an absence.</li>
+      <li><b>The hub pays for itself at three sources and two consumers.</b> Point-to-point costs S×C connections, a hub costs S+C, so it wins exactly when (S−1)(C−1) &gt; 1. At 2×2 it's a wash; everything beyond that favours the hub. <a href="/connectors/">Bench 06</a>.</li>
+      <li><b>A timeout is not a failure.</b> After one you don't know whether the write landed, and the only safe answer is an idempotency key. <a href="/retry/">Bench 03</a>.</li>
+      <li><b>Ragged cadence is harder than slow cadence.</b> Comparing velocity across sources that sample at different rates needs the baseline to be per-source, not global.</li>
+      <li><b>Deterministic scoring is a feature.</b> Both systems use fixed formulas rather than models, so a score can be explained, reproduced and argued with — which matters more than accuracy when someone asks why a ticker moved up the list.</li>
     </ul>
   </div></section>
 
   <footer><div class="wrap">
-    <p><b>What this is.</b> A personal testing ground, not a product and not a portfolio. The benches exist to answer specific questions about integration behaviour; several run live in the browser against real endpoints, and where a demo is simulated the page says so. Findings here inform <a href="https://cryptofundingwatch.com/">CryptoFundingWatch</a> and <a href="https://latticepulse.app">LatticePulse</a>, which are the systems that keep raising the questions.</p>
+    <p><b>What this is.</b> A personal testing ground, not a product and not a portfolio. Benches exist to answer specific questions about integration behaviour; several run live against real endpoints, and where a demo is simulated the page says so. Findings inform <a href="https://cryptofundingwatch.com/">CryptoFundingWatch</a> and <a href="https://latticepulse.app">LatticePulse</a>, which are the systems that keep raising the questions.</p>
     <p style="margin-top:10px">Ivan Tsang · Hong Kong UTC+8 · <a href="https://github.com/ivantsangwork/integration-lab">source</a></p>
   </div></footer>
 
