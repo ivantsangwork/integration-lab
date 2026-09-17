@@ -3,166 +3,40 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>OAuth 2.0 Playground — Integration Lab</title>
-<meta name="description" content="A live OAuth 2.0 authorization-code flow with PKCE — token lifecycle, refresh rotation, and the failure modes you can trigger yourself.">
+<title>Auth &amp; Token Lifecycle Bench</title>
+<meta name="description" content="Bench 01 — can an unattended poller hold third-party credentials for months without a mid-request expiry or a manual reconnect? Live OAuth 2.0 flow with PKCE.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<link rel="stylesheet" href="/assets/lab.css">
 <style>
-  :root{
-    --ground:#F4F6F8; --surface:#FFFFFF; --surface-2:#E9ECF1;
-    --ink:#111823; --ink-2:#465063; --ink-3:#6E7889;
-    --rule:#DBE0E8; --rule-2:#C2C9D6;
-    --accent:#B4530A; --accent-2:#8E4007; --accent-soft:#FAEEE3;
-    --ok:#0F766E; --warn:#A16207; --crit:#BE123C;
-    --shadow:0 1px 2px rgba(17,24,35,.05), 0 8px 24px -12px rgba(17,24,35,.18);
-    --con-bg:#0C111A; --con-bg-2:#141C27; --con-ink:#D8DEE8; --con-ink-2:#8994A6;
-    --con-rule:#222B39; --con-ok:#34D399; --con-warn:#FBBF24; --con-crit:#FB7185; --con-acc:#F0A44F;
-    --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
-    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    --serif:"IBM Plex Serif",ui-serif,Georgia,"Times New Roman",serif;
-    --wrap:1140px;
-  }
-  @media (prefers-color-scheme:dark){
-    :root:not([data-theme="light"]){
-      --ground:#0A0E14; --surface:#101720; --surface-2:#161F2A;
-      --ink:#E7ECF3; --ink-2:#A4AEBE; --ink-3:#798494;
-      --rule:#212A37; --rule-2:#2E3947;
-      --accent:#F0A44F; --accent-2:#F6BE7C; --accent-soft:#2A1B0D;
-      --ok:#2DD4BF; --warn:#FBBF24; --crit:#FB7185;
-      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
-    }
-  }
-  :root[data-theme="dark"]{
-    --ground:#0A0E14; --surface:#101720; --surface-2:#161F2A;
-    --ink:#E7ECF3; --ink-2:#A4AEBE; --ink-3:#798494;
-    --rule:#212A37; --rule-2:#2E3947;
-    --accent:#F0A44F; --accent-2:#F6BE7C; --accent-soft:#2A1B0D;
-    --ok:#2DD4BF; --warn:#FBBF24; --crit:#FB7185;
-    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
-  }
+  .aim{background:var(--surface); border:1px solid var(--rule); border-left:3px solid var(--accent);
+    border-radius:0 10px 10px 0; padding:20px 22px}
+  .aim .q{font-family:var(--serif); font-size:1.18rem; line-height:1.5; color:var(--ink)}
+  .aim dl{display:grid; grid-template-columns:auto 1fr; gap:6px 16px; margin:14px 0 0;
+    font-size:.82rem; font-family:var(--mono)}
+  .aim dt{color:var(--ink-3)} .aim dd{margin:0; color:var(--ink-2)}
 
-  *{box-sizing:border-box}
-  html,body{margin:0}
-  body{background:var(--ground); color:var(--ink); font-family:var(--sans); font-size:16px;
-       line-height:1.55; -webkit-font-smoothing:antialiased;
-       padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px)}
-  h1,h2,h3,h4{margin:0; text-wrap:balance; font-weight:600; line-height:1.18; letter-spacing:-.012em}
-  p{margin:0}
-  a{color:var(--accent); text-decoration-thickness:1px; text-underline-offset:2px}
-  :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:2px}
-  code{font-family:var(--mono); font-size:.92em}
-  img{max-width:100%}
-  [hidden]{display:none!important}
-
-  .wrap{max-width:var(--wrap); margin-inline:auto; padding-inline:20px}
-  .lab{font-size:.6875rem; text-transform:uppercase; letter-spacing:.1em;
-       font-weight:600; color:var(--ink-3); font-family:var(--mono)}
-  .num{font-variant-numeric:tabular-nums}
-
-  header.top{position:sticky; top:env(safe-area-inset-top,0px); z-index:50;
-    background:color-mix(in srgb, var(--ground) 88%, transparent);
-    backdrop-filter:saturate(1.6) blur(10px); border-bottom:1px solid var(--rule)}
-  .topin{display:flex; align-items:center; gap:16px; height:56px}
-  .brand{display:flex; align-items:center; gap:9px; font-weight:600; letter-spacing:-.02em;
-    font-size:.95rem; color:var(--ink); text-decoration:none; flex:none}
-  .brand .dot{width:9px; height:9px; border-radius:50%; background:var(--accent);
-    box-shadow:0 0 0 3px var(--accent-soft); flex:none}
-  .crumb{color:var(--ink-3); font-size:.85rem; font-family:var(--mono)}
-  .chip{margin-left:auto; flex:none; font-family:var(--mono); font-size:.65rem; letter-spacing:.06em;
-    text-transform:uppercase; border:1px solid currentColor; padding:3px 7px; border-radius:3px}
-  .chip.live{color:var(--ok)} .chip.pending{color:var(--warn)}
-  @media (max-width:640px){ .crumb{display:none} }
-
-  section{padding-block:clamp(34px,4.5vw,64px); border-top:1px solid var(--rule)}
-  section:first-of-type{border-top:0}
-  .shead{max-width:62ch; margin-bottom:clamp(20px,3vw,30px)}
-  .shead h2{font-size:clamp(1.3rem,1.05rem+1vw,1.8rem); margin-top:8px}
-  .shead p{margin-top:10px; color:var(--ink-2)}
-
-  h1{font-size:clamp(1.85rem,1.3rem+2.2vw,2.8rem); letter-spacing:-.028em}
-  .lede{margin-top:14px; color:var(--ink-2); font-size:1.0625rem; max-width:60ch}
-
-  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px;
-    padding:10px 16px; border-radius:6px; font-size:.9rem; font-weight:500;
-    border:1px solid transparent; cursor:pointer; text-decoration:none; font-family:var(--sans)}
-  .btn.p{background:var(--accent); color:#fff; border-color:var(--accent)}
-  :root[data-theme="dark"] .btn.p{color:#1A1004}
-  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .btn.p{color:#1A1004} }
-  .btn.p:hover{background:var(--accent-2); border-color:var(--accent-2)}
-  .btn.s{background:var(--surface); color:var(--ink); border-color:var(--rule-2)}
-  .btn.s:hover{border-color:var(--accent); color:var(--accent)}
-  .btn.d{background:transparent; color:var(--crit); border-color:currentColor}
-  .btn:disabled{opacity:.45; cursor:not-allowed}
-
-  .panel{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:18px}
   .demo{display:grid; grid-template-columns:minmax(0,350px) minmax(0,1fr); gap:18px; align-items:start}
   @media (max-width:900px){ .demo{grid-template-columns:1fr} }
 
-  .console{background:var(--con-bg); border:1px solid var(--con-rule); border-radius:10px;
-    overflow:hidden; box-shadow:var(--shadow)}
-  .conhead{display:flex; align-items:center; gap:10px; padding:9px 13px;
-    background:var(--con-bg-2); border-bottom:1px solid var(--con-rule)}
-  .conhead .t{font-family:var(--mono); font-size:.73rem; color:var(--con-ink-2)}
-  .conhead .t b{color:var(--con-ink); font-weight:500}
-  .dotstate{margin-left:auto; display:flex; align-items:center; gap:6px; font-family:var(--mono);
-    font-size:.66rem; text-transform:uppercase; letter-spacing:.08em; color:var(--con-ink-2)}
-  .dotstate i{width:6px; height:6px; border-radius:50%; background:var(--con-ink-2)}
-  .dotstate.on{color:var(--con-ok)} .dotstate.on i{background:var(--con-ok)}
-  .dotstate.warn{color:var(--con-warn)} .dotstate.warn i{background:var(--con-warn)}
-  .conbody{padding:13px; overflow-x:auto; max-height:340px; overflow-y:auto}
-  .trace{font-family:var(--mono); font-size:.78rem; line-height:1.8; color:var(--con-ink);
-    white-space:pre-wrap; word-break:break-word; margin:0}
-  .trace .m{color:var(--con-ink-2)} .trace .ok{color:var(--con-ok)}
-  .trace .wn{color:var(--con-warn)} .trace .cr{color:var(--con-crit)} .trace .ac{color:var(--con-acc)}
+  .steps{counter-reset:s; display:flex; flex-direction:column; gap:16px}
+  .step{counter-increment:s; display:grid; grid-template-columns:30px 1fr; gap:14px}
+  .step::before{content:counter(s); font-family:var(--mono); font-size:.8rem; color:var(--accent);
+    border:1px solid var(--rule-2); border-radius:50%; width:28px; height:28px;
+    display:grid; place-items:center}
+  .step h4{font-size:.95rem}
+  .step p{font-size:.87rem; color:var(--ink-2); margin-top:5px}
 
-  .meters{display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
-    background:var(--con-rule); border-top:1px solid var(--con-rule)}
-  .meter{background:var(--con-bg-2); padding:9px 12px; min-width:0}
-  .meter .l{font-family:var(--mono); font-size:.6rem; text-transform:uppercase;
-    letter-spacing:.08em; color:var(--con-ink-2)}
-  .meter .v{font-family:var(--mono); font-size:.9rem; color:var(--con-ink);
-    font-variant-numeric:tabular-nums; margin-top:2px; overflow:hidden; text-overflow:ellipsis}
-  .meter .v.g{color:var(--con-ok)} .meter .v.w{color:var(--con-warn)} .meter .v.c{color:var(--con-crit)}
-
-  .note{background:var(--surface-2); border:1px solid var(--rule);
-    border-left:2px solid var(--accent); border-radius:0 7px 7px 0;
-    padding:12px 15px; font-size:.84rem; color:var(--ink-2)}
-  .note.warn{border-left-color:var(--warn)}
-  .note b{color:var(--ink)}
-  .note + .note{margin-top:10px}
-
-  .stack{display:flex; flex-direction:column; gap:12px}
-  .btnrow{display:flex; flex-wrap:wrap; gap:8px}
-  .kv{display:grid; grid-template-columns:auto 1fr; gap:6px 14px; font-size:.84rem;
-    font-family:var(--mono); align-items:baseline}
-  .kv dt{color:var(--ink-3)} .kv dd{margin:0; color:var(--ink); word-break:break-all}
-
-  table{width:100%; border-collapse:collapse; font-size:.87rem}
-  th{text-align:left; font-weight:600; color:var(--ink-3); font-size:.66rem;
-    text-transform:uppercase; letter-spacing:.07em; padding:0 14px 9px 0;
-    border-bottom:1px solid var(--rule); white-space:nowrap}
-  td{padding:11px 14px 11px 0; border-bottom:1px solid var(--rule); vertical-align:top; color:var(--ink-2)}
-  tr:last-child td{border-bottom:0}
-  td code{color:var(--ink); background:var(--surface-2); padding:1px 5px; border-radius:3px}
-  .scroller{overflow-x:auto}
-  .scroller table{min-width:620px}
-
-  .prose{font-family:var(--serif); font-size:1.0625rem; line-height:1.68; color:var(--ink-2); max-width:64ch}
-  .prose p+p{margin-top:14px}
-  .prose strong{color:var(--ink); font-weight:600}
-
-  .diagram{overflow-x:auto; padding-bottom:6px}
-  .diagram svg{display:block; min-width:760px; width:100%; height:auto}
-  .dbox{fill:var(--surface); stroke:var(--rule-2)}
-  .dbox-a{fill:var(--accent-soft); stroke:var(--accent)}
-  .dlab{fill:var(--ink); font-family:var(--sans); font-size:12.5px; font-weight:500}
-  .dsub{fill:var(--ink-3); font-family:var(--mono); font-size:9.5px}
-  .dttl{fill:var(--ink-3); font-family:var(--mono); font-size:9px; letter-spacing:.09em}
-  .dline{stroke:var(--rule-2); fill:none; stroke-width:1.4}
-  .dline-a{stroke:var(--accent); fill:none; stroke-width:1.6}
-
-  footer{padding-block:30px 40px; border-top:1px solid var(--rule); color:var(--ink-3); font-size:.82rem}
+  .uses{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px}
+  .use{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:19px}
+  .use .role{font-family:var(--mono); font-size:.64rem; text-transform:uppercase;
+    letter-spacing:.08em; color:var(--accent)}
+  .use h4{font-size:1rem; margin-top:5px}
+  .use p{font-size:.86rem; color:var(--ink-2); margin-top:9px}
+  .use .out{margin-top:12px; padding-top:11px; border-top:1px dashed var(--rule-2);
+    font-family:var(--mono); font-size:.74rem; color:var(--ink-3)}
+  .use .out b{color:var(--ink-2); font-weight:500}
 </style>
 </head>
 <body>
@@ -170,89 +44,55 @@
 <header class="top">
   <div class="wrap topin">
     <a class="brand" href="/"><span class="dot"></span>Integration&nbsp;Lab</a>
-    <span class="crumb">/ module 01 — oauth</span>
+    <span class="crumb">/ bench 01 — auth &amp; token lifecycle</span>
     <span class="chip pending" id="statechip">checking…</span>
   </div>
 </header>
 
 <main>
 
-  <!-- ===================== HERO + PLAYGROUND ===================== -->
+  <!-- ===================== 1. AIM ===================== -->
   <section><div class="wrap">
-    <div class="lab">Module 01 · Live</div>
-    <h1 style="margin-top:12px">OAuth 2.0, including the parts that break.</h1>
-    <p class="lede">Most OAuth walkthroughs stop at “you got a token.” That’s the easy half. The half that costs you a weekend is the token expiring mid-transaction, the user revoking consent in their Google settings, and the authorization code that gets replayed. Connect your own account below and trigger each one.</p>
+    <div class="lab">Bench 01</div>
+    <h1 style="margin-top:12px">Auth &amp; token lifecycle</h1>
 
-    <div class="demo" style="margin-top:28px">
-
-      <!-- control panel -->
-      <div class="stack">
-        <div class="panel stack">
-          <div class="lab">Connection</div>
-
-          <!-- state: setup pending -->
-          <div id="s-pending" hidden>
-            <div class="note warn"><b>Backend not configured yet.</b> The handlers are deployed, but no Google OAuth client is registered against this deployment. <span id="missing-list"></span></div>
-          </div>
-
-          <!-- state: disconnected -->
-          <div id="s-off" hidden class="stack">
-            <p style="font-size:.88rem; color:var(--ink-2)">Runs a real authorization-code flow with PKCE against your Google account.</p>
-            <button class="btn p" type="button" id="btn-connect">Connect Google account</button>
-            <div class="note"><b>What this asks for:</b> read-only file metadata (<code>drive.metadata.readonly</code>) — filenames, nothing inside them. Your tokens are held in a signed, HttpOnly cookie for one hour and are never written to a database. Disconnecting revokes the grant at Google, not just here.</div>
-          </div>
-
-          <!-- state: connected -->
-          <div id="s-on" hidden class="stack">
-            <dl class="kv">
-              <dt>scope</dt><dd id="v-scope">—</dd>
-              <dt>token</dt><dd id="v-fp">—</dd>
-              <dt>refresh</dt><dd id="v-refresh">—</dd>
-            </dl>
-            <div class="btnrow">
-              <button class="btn s" type="button" id="btn-refresh">Force refresh</button>
-              <button class="btn d" type="button" id="btn-disconnect">Disconnect &amp; revoke</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel stack">
-          <div class="lab">Trigger a failure</div>
-          <p style="font-size:.84rem; color:var(--ink-2)">These hit the deployed callback handler for real and render whatever it returns.</p>
-          <div class="btnrow">
-            <button class="btn s" type="button" id="btn-denied">User cancels consent</button>
-            <button class="btn s" type="button" id="btn-state">State mismatch (CSRF)</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- console -->
-      <div class="console">
-        <div class="conhead">
-          <div class="t"><b>oauth</b> · token lifecycle</div>
-          <div class="dotstate" id="condot"><i></i><span id="condot-t">idle</span></div>
-        </div>
-        <div class="conbody"><pre class="trace" id="trace"></pre></div>
-        <div class="meters">
-          <div class="meter"><div class="l">Expires in</div><div class="v num" id="m-exp">—</div></div>
-          <div class="meter"><div class="l">Refreshes</div><div class="v num" id="m-ref">0</div></div>
-          <div class="meter"><div class="l">Last latency</div><div class="v num" id="m-lat">—</div></div>
-        </div>
-      </div>
+    <div class="aim" style="margin-top:24px; max-width:76ch">
+      <div class="lab" style="margin-bottom:10px">Testing aim</div>
+      <p class="q">Can an unattended poller hold third-party credentials for months without a mid-request expiry, a silent stop, or a human being asked to log in again?</p>
+      <dl>
+        <dt>success</dt><dd>ingestion survives token expiry indefinitely with no manual step</dd>
+        <dt>failure</dt><dd>any state the poller cannot recover from on its own</dd>
+        <dt>also testing</dt><dd>whether a revoked grant is distinguishable from a quiet data source</dd>
+      </dl>
     </div>
   </div></section>
 
-  <!-- ===================== FLOW ===================== -->
+  <!-- ===================== 2. PAIN POINT ===================== -->
   <section><div class="wrap">
     <div class="shead">
-      <div class="lab">The flow</div>
+      <div class="lab">Pain point</div>
+      <h2>A dead credential looks exactly like a quiet market</h2>
+    </div>
+    <div class="prose">
+      <p><a href="https://latticepulse.app">LatticePulse</a> polls X and Reddit every few minutes. Both authenticate with OAuth 2.0, and both issue access tokens measured in hours. A process that runs unattended for months will therefore refresh its credentials thousands of times, and <strong>every one of those refreshes is an opportunity to stop working forever</strong>.</p>
+      <p>The dangerous part is what failure looks like. If the refresh token is revoked — a user changes a password, an app’s permissions are reviewed, a provider rotates something — ingestion from that source simply returns nothing. The heatmap keeps rendering. The scores keep computing. <strong>A source producing zero events is indistinguishable from a source where nothing is happening</strong>, and “nothing is happening” is a perfectly plausible reading of a quiet Sunday.</p>
+      <p>By the time someone notices that X has contributed no signals since Tuesday, the baseline has been polluted: every ticker’s attention velocity has been computed against a window that was missing a whole source. The scores aren’t just stale, they’re wrong in a way that survives the fix.</p>
+      <p><strong>CryptoFundingWatch has the mirror-image problem.</strong> Exchange APIs authenticate with signed API keys rather than OAuth, so nothing expires on a timer — but nothing refreshes either. A rotated or rate-limit-suspended key fails the same silent way, and because there is no expiry event to hook into, there is nothing to monitor except the absence of data. The lesson transfers: <em>the credential needs a heartbeat, not just a refresh.</em></p>
+      <p>SEC EDGAR, by contrast, needs no credential at all — just a declared User-Agent. Worth noting because it is the only one of the four sources that cannot fail this way, and it is not a coincidence that it is also the least fragile.</p>
+    </div>
+  </div></section>
+
+  <!-- ===================== 3. ARCHITECTURE ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Solution architecture</div>
       <h2>Authorization code, with PKCE</h2>
-      <p>Six steps. The two that matter are the ones most implementations skip: generating a verifier before you leave, and proving you hold it when you come back.</p>
+      <p>Six steps. The two that matter for an unattended poller are the last two: refreshing <em>ahead of</em> expiry rather than reacting to a 401, and treating a revoked grant as an alertable state rather than an empty result.</p>
     </div>
     <div class="diagram">
-      <svg viewBox="0 0 900 280" role="img" aria-label="Authorization code flow with PKCE: the app generates a verifier and challenge, redirects to Google, receives a code, then exchanges the code plus verifier for tokens.">
-        <text class="dttl" x="8" y="18">BROWSER</text>
-        <text class="dttl" x="330" y="18">GOOGLE</text>
+      <svg viewBox="0 0 900 280" role="img" aria-label="Authorization code flow with PKCE: the app generates a verifier and challenge, redirects to the provider, receives a code, then exchanges the code plus verifier for tokens, holds a signed session, and refreshes before expiry.">
+        <text class="dttl" x="8" y="18">CLIENT</text>
+        <text class="dttl" x="330" y="18">PROVIDER</text>
         <text class="dttl" x="660" y="18">EDGE FUNCTION</text>
 
         <rect class="dbox-a" x="8" y="30" width="200" height="74" rx="7"/>
@@ -282,116 +122,170 @@
         <rect class="dbox" x="330" y="150" width="200" height="90" rx="7"/>
         <text class="dlab" x="346" y="174">5 · signed session</text>
         <text class="dsub" x="346" y="192">HttpOnly · Secure</text>
-        <text class="dsub" x="346" y="208">1 hour, then gone</text>
+        <text class="dsub" x="346" y="208">absolute expiry tracked</text>
         <text class="dsub" x="346" y="224">nothing stored server-side</text>
 
-        <rect class="dbox" x="8" y="150" width="200" height="90" rx="7"/>
-        <text class="dlab" x="24" y="174">6 · refresh</text>
-        <text class="dsub" x="24" y="192">before expiry, not after</text>
+        <rect class="dbox-a" x="8" y="150" width="200" height="90" rx="7"/>
+        <text class="dlab" x="24" y="174">6 · refresh ahead</text>
+        <text class="dsub" x="24" y="192">at T-5min, not on 401</text>
         <text class="dsub" x="24" y="208">rotated token replaces old</text>
-        <text class="dsub" x="24" y="224">revoked → reconnect</text>
+        <text class="dsub" x="24" y="224">revoked → alert, not silence</text>
 
         <path class="dline-a" d="M776 104 L776 150"/><path class="dline-a" d="M772 142 l4 8 4 -8"/>
         <path class="dline" d="M660 195 L530 195"/><path class="dline" d="M538 191 l-8 4 8 4"/>
-        <path class="dline" d="M330 195 L208 195"/><path class="dline" d="M216 191 l-8 4 8 4"/>
+        <path class="dline-a" d="M330 195 L208 195"/><path class="dline-a" d="M216 191 l-8 4 8 4"/>
       </svg>
     </div>
+
+    <div class="prose" style="margin-top:26px">
+      <p><strong>Why PKCE.</strong> Without it the authorization code is a bearer token travelling through a redirect — a URL, which lands in browser history, server logs and <code>Referer</code> headers. Anyone who captures it can exchange it for real tokens, because the token endpoint asks only for the code and a client ID.</p>
+      <p>PKCE makes the code useless on its own. The client generates a random <em>verifier</em>, sends only its hash as a <em>challenge</em>, and must present the original verifier at exchange time. A stolen code without the verifier exchanges for nothing. Ten lines, specified in <a href="https://datatracker.ietf.org/doc/html/rfc7636">RFC 7636</a>.</p>
+    </div>
   </div></section>
 
-  <!-- ===================== WHY PKCE ===================== -->
+  <!-- ===================== 4. LIVE BENCH ===================== -->
   <section><div class="wrap">
     <div class="shead">
-      <div class="lab">Why PKCE</div>
-      <h2>The attack it exists to stop</h2>
+      <div class="lab">Live bench</div>
+      <h2>Run the full lifecycle</h2>
+      <p>A real authorization-code flow with PKCE against your own Google account — chosen because it is a provider anyone reading this can test with. Connect, watch the token age, force a refresh, then revoke it and see what the poller would experience.</p>
+    </div>
+
+    <div class="demo">
+      <div class="stack">
+        <div class="panel stack">
+          <div class="lab">Connection</div>
+
+          <div id="s-pending" hidden>
+            <div class="note warn"><b>Backend not configured yet.</b> The handlers are deployed, but no OAuth client is registered against this deployment. <span id="missing-list"></span></div>
+          </div>
+
+          <div id="s-off" hidden class="stack">
+            <p style="font-size:.88rem; color:var(--ink-2)">Runs a real authorization-code flow with PKCE.</p>
+            <button class="btn p" type="button" id="btn-connect">Connect Google account</button>
+            <div class="note"><b>Scope requested:</b> read-only file metadata (<code>drive.metadata.readonly</code>) — filenames, nothing inside them. Tokens live in a signed, HttpOnly cookie for one hour and are never written to storage. Disconnecting revokes the grant at the provider, not just here.</div>
+          </div>
+
+          <div id="s-on" hidden class="stack">
+            <dl class="kv">
+              <dt>scope</dt><dd id="v-scope">—</dd>
+              <dt>token</dt><dd id="v-fp">—</dd>
+              <dt>refresh</dt><dd id="v-refresh">—</dd>
+            </dl>
+            <div class="btnrow">
+              <button class="btn s" type="button" id="btn-refresh">Force refresh</button>
+              <button class="btn d" type="button" id="btn-disconnect">Disconnect &amp; revoke</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel stack">
+          <div class="lab">Trigger a failure</div>
+          <p style="font-size:.84rem; color:var(--ink-2)">These hit the deployed callback handler for real and render whatever it returns.</p>
+          <div class="btnrow">
+            <button class="btn s" type="button" id="btn-denied">User cancels consent</button>
+            <button class="btn s" type="button" id="btn-state">State mismatch (CSRF)</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="console">
+        <div class="conhead">
+          <div class="t"><b>oauth</b> · token lifecycle</div>
+          <div class="dotstate" id="condot"><i></i><span id="condot-t">idle</span></div>
+        </div>
+        <div class="conbody"><pre class="trace" id="trace"></pre></div>
+        <div class="meters three">
+          <div class="meter"><div class="l">Expires in</div><div class="v num" id="m-exp">—</div></div>
+          <div class="meter"><div class="l">Refreshes</div><div class="v num" id="m-ref">0</div></div>
+          <div class="meter"><div class="l">Last latency</div><div class="v num" id="m-lat">—</div></div>
+        </div>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- ===================== 5. IMPLEMENTATION ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Implementation process</div>
+      <h2>Holding a credential unattended</h2>
+      <p>The flow itself is the easy part and every library does it. These are the steps that decide whether the poller is still running in six months.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div>
+        <h4>Track absolute expiry, not elapsed time</h4>
+        <p>Store the instant the token dies, computed once at issue. Anything based on “seconds since we got it” drifts across restarts, clock changes and queue delays — and drifts in the direction of using an expired token.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Refresh ahead of the deadline, never on a 401</h4>
+        <p>Refresh when less than five minutes remain. Reacting to a 401 means the expiry lands inside a real request, and the retry has to be safe to repeat — a problem <a href="/retry/">bench 03</a> exists to handle and this one should avoid creating.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Serialise refreshes per credential</h4>
+        <p>Two workers refreshing the same token concurrently is how you get one valid token and one immediately-invalidated one, with a coin flip deciding which worker survives. One refresh in flight per credential, others wait for its result.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Treat <code>invalid_grant</code> on refresh as terminal</h4>
+        <p>It means revoked or expired beyond recovery. Retrying it never succeeds, so retry logic here is a bug rather than resilience. Clear the session, raise an alert, and stop pretending the source is quiet.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Give every credential a heartbeat</h4>
+        <p>The single most important step, and the one that comes from the pain point rather than the spec. Record the last successful fetch per source and alert on <em>absence</em>. A source that has produced nothing for three times its expected interval is broken until proven otherwise.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Request the narrowest scope that works</h4>
+        <p>Scope is the blast radius of a leaked token. It also determines how alarming the consent screen looks, which matters when the person approving it is a user rather than you.</p>
+      </div></div>
+    </div>
+  </div></section>
+
+  <!-- ===================== 6. USE CASES ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Use cases</div>
+      <h2>Where this runs</h2>
+    </div>
+    <div class="uses">
+      <div class="use">
+        <div class="role">System B · primary</div>
+        <h4><a href="https://latticepulse.app" style="color:inherit">LatticePulse</a></h4>
+        <p>X and Reddit ingestion both run on OAuth 2.0 with tokens that expire in hours, polled every few minutes, unattended. The refresh path runs thousands of times between human interventions, and a revoked grant must raise an alert rather than quietly contributing zero events to the baseline.</p>
+        <div class="out"><b>Tests:</b> long-running refresh, revocation detection<br><b>Contrast:</b> SEC EDGAR needs no credential at all</div>
+      </div>
+      <div class="use">
+        <div class="role">System A · the mirror case</div>
+        <h4><a href="https://cryptofundingwatch.com/" style="color:inherit">CryptoFundingWatch</a></h4>
+        <p>Exchange APIs use signed keys, so nothing expires on a timer — and nothing refreshes either. There is no expiry event to hook into, which means the heartbeat is the <em>only</em> detection mechanism available when a key is rotated or suspended.</p>
+        <div class="out"><b>Tests:</b> credential failure with no expiry signal<br><b>Finding:</b> heartbeat &gt; refresh logic</div>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- ===================== 7. FINDINGS ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Findings</div>
+      <h2>What the bench showed</h2>
     </div>
     <div class="prose">
-      <p>Without PKCE, the authorization code is a bearer token in transit. It arrives back at your app through a redirect — a URL, which lands in browser history, server logs, and <code>Referer</code> headers, and passes through whatever is between the user and you.</p>
-      <p>An attacker who captures that code can exchange it for real tokens, because the token endpoint only asks for the code and your client ID. On a mobile app or a single-page app, where the client secret can’t be kept secret, that’s the whole attack.</p>
-      <p><strong>PKCE closes it by making the code useless on its own.</strong> Before redirecting, the app generates a random <em>verifier</em>, hashes it, and sends only the hash — the <em>challenge</em>. Google stores the challenge with the pending authorization. When the code comes back, the app must present the original verifier; Google hashes it and compares. A stolen code without the verifier exchanges for nothing.</p>
-      <p>The verifier never leaves your side of the connection, so an attacker who sees the redirect sees only a code they cannot spend. It costs about ten lines, and it is specified in <a href="https://datatracker.ietf.org/doc/html/rfc7636">RFC 7636</a>.</p>
+      <p><strong>The refresh logic is not the hard part; the monitoring is.</strong> Going in, this bench was about getting PKCE and rotation right. Those took an afternoon and every library does them already. The finding that actually changed how both systems are built is that <em>a credential failure produces no error anywhere</em> — it produces an absence, and absences don’t page anyone. Every source now carries a last-successful-fetch timestamp and alerts on staleness, which catches key rotation, revocation, rate-limit suspension and a silently changed endpoint with one mechanism.</p>
+      <p><strong>Refreshing reactively creates a problem that didn’t need to exist.</strong> Waiting for a 401 puts the expiry inside a live request, which then has to be retried, which means the request has to be safe to repeat. Refreshing five minutes early removes the entire class of problem for the cost of one extra call per token lifetime.</p>
+      <p><strong>Distinct failure branches are worth the extra code.</strong> The bench handles cancelled consent, state mismatch, replayed code and revoked grant as four separate outcomes rather than one 500. Only one of them — <code>invalid_grant</code> on refresh — is terminal and needs a human. Collapsing them means either paging someone for a user who clicked cancel, or retrying forever on something that will never succeed.</p>
+      <p><strong>Not everything needs a credential, and that is an architectural option.</strong> SEC EDGAR is the least fragile of LatticePulse’s four sources purely because it has nothing to revoke. Where a public or key-free endpoint gives the same data, it is worth a meaningful loss of convenience.</p>
     </div>
-  </div></section>
-
-  <!-- ===================== FAILURE MODES ===================== -->
-  <section><div class="wrap">
-    <div class="shead">
-      <div class="lab">Failure modes</div>
-      <h2>Five ways this breaks, and what the code does about each</h2>
-      <p>An integration that only handles the happy path works in the demo and pages you at 3am. Every row below is handled explicitly rather than collapsing into a generic 500.</p>
-    </div>
-    <div class="scroller">
-      <table>
-        <thead><tr><th>What happens</th><th>Symptom</th><th>How it’s handled</th></tr></thead>
-        <tbody>
-          <tr>
-            <td><b>User cancels consent</b></td>
-            <td><code>?error=access_denied</code> on the callback</td>
-            <td>Detected before anything else is read. Redirects back with the reason, PKCE cookie cleared. Not an error state — a choice the user made.</td>
-          </tr>
-          <tr>
-            <td><b>State mismatch</b></td>
-            <td>Returned <code>state</code> ≠ the one issued</td>
-            <td>Compared in <b>constant time</b>, then rejected. A <code>===</code> on a secret leaks timing information; this is the same discipline as comparing a signature.</td>
-          </tr>
-          <tr>
-            <td><b>Code replayed or expired</b></td>
-            <td>Google returns <code>invalid_grant</code></td>
-            <td>Surfaced by name rather than as a 500, because <code>invalid_grant</code> means something specific — the code was already spent or is stale, and the fix is to restart the flow, not to retry.</td>
-          </tr>
-          <tr>
-            <td><b>Access token expires mid-session</b></td>
-            <td>401 from the resource API</td>
-            <td>Avoided rather than caught. The session tracks absolute expiry and refreshes when under five minutes remain, so the expiry never lands in the middle of a user’s request.</td>
-          </tr>
-          <tr>
-            <td><b>User revokes consent in Google settings</b></td>
-            <td><code>invalid_grant</code> on refresh</td>
-            <td>Session cleared and the UI asks for reconnection. Retrying a revoked grant never succeeds, so retry logic here is a bug, not resilience.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div></section>
-
-  <!-- ===================== IMPLEMENTATION ===================== -->
-  <section><div class="wrap">
-    <div class="shead">
-      <div class="lab">Implementation</div>
-      <h2>The actual source</h2>
-      <p>Public repo — read the handling rather than taking the table above on trust.</p>
-    </div>
-    <div class="scroller">
-      <table>
-        <thead><tr><th>File</th><th>What’s in it</th></tr></thead>
-        <tbody>
-          <tr>
-            <td><a href="https://github.com/ivantsangwork/integration-lab/blob/main/functions/api/oauth/_shared.ts"><code>_shared.ts</code></a></td>
-            <td>PKCE generation, HMAC-signed cookies, constant-time compare. No dependencies — Workers’ WebCrypto only.</td>
-          </tr>
-          <tr>
-            <td><a href="https://github.com/ivantsangwork/integration-lab/blob/main/functions/api/oauth/start.ts"><code>start.ts</code></a></td>
-            <td>Builds the authorization URL, puts the verifier and state in a signed 10-minute cookie. Nothing stored server-side.</td>
-          </tr>
-          <tr>
-            <td><a href="https://github.com/ivantsangwork/integration-lab/blob/main/functions/api/oauth/callback.ts"><code>callback.ts</code></a></td>
-            <td>Code exchange, plus the four distinct failure branches from the table above.</td>
-          </tr>
-          <tr>
-            <td><a href="https://github.com/ivantsangwork/integration-lab/blob/main/functions/api/oauth/session.ts"><code>session.ts</code></a></td>
-            <td>Metadata-only inspector, forced refresh with rotation, and a disconnect that revokes <em>upstream</em> — clearing a cookie alone leaves the grant alive in the user’s account.</td>
-          </tr>
-          <tr>
-            <td><a href="https://github.com/ivantsangwork/integration-lab/blob/main/functions/api/oauth/config.ts"><code>config.ts</code></a></td>
-            <td>Reports which variables are missing, by name only. A config endpoint that leaks what it checks for is worse than none.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p style="margin-top:20px"><a class="btn s" href="/">← Back to the lab</a></p>
+    <p style="margin-top:22px; font-size:.87rem; color:var(--ink-2)">
+      Bench source:
+      <a href="https://github.com/ivantsangwork/integration-lab/blob/main/functions/api/oauth/_shared.ts"><code>_shared.ts</code></a> ·
+      <a href="https://github.com/ivantsangwork/integration-lab/blob/main/functions/api/oauth/start.ts"><code>start.ts</code></a> ·
+      <a href="https://github.com/ivantsangwork/integration-lab/blob/main/functions/api/oauth/callback.ts"><code>callback.ts</code></a> ·
+      <a href="https://github.com/ivantsangwork/integration-lab/blob/main/functions/api/oauth/session.ts"><code>session.ts</code></a>
+      <br>Related: <a href="/retry/">bench 03 — retry &amp; dead letter</a>
+    </p>
+    <p style="margin-top:18px"><a class="btn s" href="/">← All benches</a></p>
   </div></section>
 
   <footer><div class="wrap">
-    <p><b>Live module.</b> This page runs a real OAuth 2.0 flow against Google. Tokens are held in a signed HttpOnly cookie for one hour and never written to storage; disconnecting revokes the grant upstream. The OAuth client runs in Google’s Testing mode, so the consent screen shows an “unverified app” warning — expected for a lab, and not worth putting a demo through Google’s production review to hide.</p>
+    <p><b>Live bench.</b> Runs a real OAuth 2.0 flow. Tokens are held in a signed HttpOnly cookie for one hour and never written to storage; disconnecting revokes the grant upstream. The OAuth client runs in testing mode, so the consent screen shows an “unverified app” warning — expected for a bench, and not worth putting one through a production review to hide.</p>
   </div></footer>
 
 </main>
@@ -406,7 +300,7 @@
     return d.toTimeString().slice(0,8) + "." + String(d.getMilliseconds()).padStart(3,"0");
   }
   function log(html){
-    traceEl.innerHTML += '<span class="m">' + stamp() + '</span>  ' + html + "\n";
+    traceEl.innerHTML += '<span class="m">' + stamp() + "</span>  " + html + "\n";
     traceEl.parentElement.scrollTop = traceEl.parentElement.scrollHeight;
   }
   function setDot(cls, text){
@@ -453,7 +347,6 @@
     startTick();
   }
 
-  // ---------------------------------------------------------------- boot
   function boot(){
     log('<span class="ac">GET</span> /api/oauth/config');
 
@@ -487,7 +380,6 @@
       $("missing-list").textContent = "The /api/oauth/* endpoints did not respond.";
     });
 
-    // surface anything the callback handed back in the hash
     var h = decodeURIComponent(location.hash.replace(/^#/, ""));
     if (h.indexOf("oauth-error:") === 0){
       var parts = h.slice("oauth-error:".length).split(":");
@@ -501,7 +393,6 @@
     }
   }
 
-  // ---------------------------------------------------------------- actions
   $("btn-connect").addEventListener("click", function(){
     log('<span class="ac">GET</span> /api/oauth/start  <span class="m">→ generating verifier, redirecting</span>');
     location.href = "/api/oauth/start";
@@ -534,7 +425,7 @@
 
   $("btn-disconnect").addEventListener("click", function(){
     var btn = this; btn.disabled = true;
-    log('<span class="ac">DELETE</span> /api/oauth/session  <span class="m">→ revoking upstream at Google</span>');
+    log('<span class="ac">DELETE</span> /api/oauth/session  <span class="m">→ revoking upstream</span>');
     fetch("/api/oauth/session", { method:"DELETE" }).then(function(r){ return r.json(); }).then(function(){
       log('  <span class="ok">revoked</span>  <span class="m">grant removed from the account, not just this site</span>');
       expiresAt = null;

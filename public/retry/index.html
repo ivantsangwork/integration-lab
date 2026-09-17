@@ -3,14 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Retry &amp; Dead Letter Lab — Integration Lab</title>
-<meta name="description" content="Break a real endpoint and watch exponential backoff, jitter, idempotency keys and a dead-letter queue handle it. Real HTTP, real timings.">
+<title>Retry &amp; Dead Letter Bench</title>
+<meta name="description" content="Bench 03 — when a source goes down mid-cycle, does the pipeline degrade, recover, and avoid double-applying anything? Real HTTP against a controllable endpoint.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
 <link rel="stylesheet" href="/assets/lab.css">
 <style>
-  /* ---- page-specific: the pipeline visual ---- */
+  .aim{background:var(--surface); border:1px solid var(--rule); border-left:3px solid var(--accent);
+    border-radius:0 10px 10px 0; padding:20px 22px}
+  .aim .q{font-family:var(--serif); font-size:1.18rem; line-height:1.5; color:var(--ink)}
+  .aim dl{display:grid; grid-template-columns:auto 1fr; gap:6px 16px; margin:14px 0 0;
+    font-size:.82rem; font-family:var(--mono)}
+  .aim dt{color:var(--ink-3)} .aim dd{margin:0; color:var(--ink-2)}
+
   .rig{display:grid; grid-template-columns:minmax(0,300px) minmax(0,1fr); gap:18px; align-items:start}
   @media (max-width:940px){ .rig{grid-template-columns:1fr} }
 
@@ -57,6 +63,24 @@
   .legend{display:flex; flex-wrap:wrap; gap:14px; margin-top:14px; font-size:.74rem; color:var(--ink-3)}
   .legend i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px;
     vertical-align:-1px}
+
+  .steps{counter-reset:s; display:flex; flex-direction:column; gap:16px}
+  .step{counter-increment:s; display:grid; grid-template-columns:30px 1fr; gap:14px}
+  .step::before{content:counter(s); font-family:var(--mono); font-size:.8rem; color:var(--accent);
+    border:1px solid var(--rule-2); border-radius:50%; width:28px; height:28px;
+    display:grid; place-items:center}
+  .step h4{font-size:.95rem}
+  .step p{font-size:.87rem; color:var(--ink-2); margin-top:5px}
+
+  .uses{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px}
+  .use{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:19px}
+  .use .role{font-family:var(--mono); font-size:.64rem; text-transform:uppercase;
+    letter-spacing:.08em; color:var(--accent)}
+  .use h4{font-size:1rem; margin-top:5px}
+  .use p{font-size:.86rem; color:var(--ink-2); margin-top:9px}
+  .use .out{margin-top:12px; padding-top:11px; border-top:1px dashed var(--rule-2);
+    font-family:var(--mono); font-size:.74rem; color:var(--ink-3)}
+  .use .out b{color:var(--ink-2); font-weight:500}
 </style>
 </head>
 <body>
@@ -64,22 +88,101 @@
 <header class="top">
   <div class="wrap topin">
     <a class="brand" href="/"><span class="dot"></span>Integration&nbsp;Lab</a>
-    <span class="crumb">/ module 03 — retry &amp; dead letter</span>
+    <span class="crumb">/ bench 03 — retry &amp; dead letter</span>
     <span class="chip live">live</span>
   </div>
 </header>
 
 <main>
 
-  <!-- ===================== THE RIG ===================== -->
+  <!-- ===================== 1. AIM ===================== -->
   <section><div class="wrap">
-    <div class="lab">Module 03 · Live</div>
-    <h1 style="margin-top:12px">Break it, and watch it recover.</h1>
-    <p class="lede">The endpoint below is real and deployed. Set it to fail, send traffic, and watch exponential backoff with jitter, idempotency keys and a dead-letter queue do their jobs — with the actual HTTP status codes and measured latencies, not a mock.</p>
+    <div class="lab">Bench 03</div>
+    <h1 style="margin-top:12px">Retry &amp; dead letter</h1>
 
-    <div class="rig" style="margin-top:26px">
+    <div class="aim" style="margin-top:24px; max-width:76ch">
+      <div class="lab" style="margin-bottom:10px">Testing aim</div>
+      <p class="q">When one source goes down mid-cycle, does the pipeline degrade rather than fail, recover without intervention, and avoid double-applying anything it already did?</p>
+      <dl>
+        <dt>success</dt><dd>a failing source costs its own rows, not the whole cycle</dd>
+        <dt>failure</dt><dd>anything lost silently, or anything applied twice</dd>
+        <dt>constraint</dt><dd>the entire retry budget must fit inside a 60-second refresh cycle</dd>
+      </dl>
+    </div>
+  </div></section>
 
-      <!-- controls -->
+  <!-- ===================== 2. PAIN POINT ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Pain point</div>
+      <h2>Two systems, two completely different costs of failure</h2>
+    </div>
+    <div class="prose">
+      <p><a href="https://cryptofundingwatch.com/">CryptoFundingWatch</a> refreshes five venues on a fixed cycle. When one returns 503 mid-cycle there are three options, and two of them are wrong. Failing the whole cycle throws away four good venues because of one bad one. Retrying inline until it works blows the cycle budget — and a refresh that takes longer than its own interval is a system that falls progressively further behind and never catches up.</p>
+      <p>The third option is to <strong>serve four fresh rows and one stale-flagged</strong>, and let the next cycle try again. Which produces the constraint this bench actually exists to test: <em>the retry budget is bounded by the refresh interval</em>. Back off too politely and you miss the cycle; give up too fast and you drop a venue that was one attempt from responding.</p>
+      <p><strong><a href="https://latticepulse.app">LatticePulse</a> inverts the cost.</strong> Polling failures are cheap there for the same reason — the next poll re-fetches, nothing is lost. But an <em>alert</em> is not a poll. It happens once, it is the product, and both failure directions hurt: a dropped alert is the thing the user pays for, and a duplicate alert at 3am is how you lose them. That asymmetry is why dead-lettering and idempotency matter enormously on the alert path and barely at all on the ingest path.</p>
+      <p>The dangerous case for both is the <strong>timeout</strong>. A request that never returns tells you nothing about whether it landed. Retrying might duplicate; not retrying might drop. Without an idempotency key there is no correct choice, only two ways to be wrong.</p>
+    </div>
+  </div></section>
+
+  <!-- ===================== 3. ARCHITECTURE ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Solution architecture</div>
+      <h2>Exponential backoff, with jitter and a budget</h2>
+      <p>Doubling the wait is the easy half. The shaded band is the part that matters at scale — and the dashed line is the part that matters on a clock.</p>
+    </div>
+    <div class="diagram">
+      <svg viewBox="0 0 860 270" role="img" aria-label="Chart of retry delay by attempt: base delays of 0.8, 1.6 and 3.2 seconds with a shaded jitter band spanning half to full of each delay, and a cutoff after the fourth attempt.">
+        <line class="dgrid" x1="62" y1="30" x2="62" y2="204"/>
+        <line class="dgrid" x1="62" y1="204" x2="806" y2="204"/>
+        <text class="dttl" x="62" y="22">DELAY BEFORE NEXT ATTEMPT</text>
+
+        <line class="dgrid" x1="62" y1="163" x2="806" y2="163" opacity=".55"/>
+        <line class="dgrid" x1="62" y1="122" x2="806" y2="122" opacity=".55"/>
+        <line class="dgrid" x1="62" y1="81"  x2="806" y2="81"  opacity=".55"/>
+        <line class="dgrid" x1="62" y1="40"  x2="806" y2="40"  opacity=".55"/>
+        <text class="dsub" x="30" y="207">0s</text>
+        <text class="dsub" x="30" y="166">1s</text>
+        <text class="dsub" x="30" y="125">2s</text>
+        <text class="dsub" x="30" y="84">3s</text>
+        <text class="dsub" x="30" y="43">4s</text>
+
+        <rect class="dbox-a" x="140" y="171" width="86" height="16" rx="3" opacity=".55"/>
+        <rect class="dbox-a" x="344" y="138" width="86" height="33" rx="3" opacity=".55"/>
+        <rect class="dbox-a" x="548" y="73"  width="86" height="65" rx="3" opacity=".55"/>
+
+        <line class="dline-a" x1="140" y1="171" x2="226" y2="171"/>
+        <line class="dline-a" x1="344" y1="138" x2="430" y2="138"/>
+        <line class="dline-a" x1="548" y1="73"  x2="634" y2="73"/>
+
+        <text class="dsub" x="140" y="222">after attempt 1</text>
+        <text class="dlab" x="140" y="166">0.8s</text>
+        <text class="dsub" x="344" y="222">after attempt 2</text>
+        <text class="dlab" x="344" y="133">1.6s</text>
+        <text class="dsub" x="548" y="222">after attempt 3</text>
+        <text class="dlab" x="548" y="68">3.2s</text>
+
+        <line class="dline-d" x1="752" y1="40" x2="752" y2="204"/>
+        <text class="dsub" x="700" y="222">attempt 4 fails</text>
+        <text class="dlab" x="676" y="33" style="fill:var(--crit)">→ dead letter</text>
+
+        <text class="dsub" x="140" y="243">shaded band = actual randomised wait (half to full)</text>
+        <text class="dsub" x="140" y="259" style="fill:var(--accent)">total worst case ≈ 5.6s of waiting — 9% of a 60s cycle, so it fits</text>
+      </svg>
+    </div>
+    <div class="note" style="margin-top:18px"><b>Why four attempts and not eight.</b> Backoff doubles, so the budget does too. Four attempts cost about 5.6 seconds of waiting. Eight would cost over 100 — longer than the entire refresh interval. In a polling system the <em>next cycle is the real retry</em>, so the in-cycle budget only needs to cover a transient blip, not an outage.</div>
+  </div></section>
+
+  <!-- ===================== 4. LIVE BENCH ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Live bench</div>
+      <h2>Break it, and watch it recover</h2>
+      <p>The endpoint is real and deployed. Set it to fail, send traffic, and watch backoff, jitter, idempotency keys and the dead-letter queue do their jobs with actual status codes and measured latencies.</p>
+    </div>
+
+    <div class="rig">
       <div class="stack">
         <div class="panel stack">
           <div class="lab">Downstream health</div>
@@ -101,11 +204,10 @@
             <button class="btn s sm" type="button" id="b-replay" disabled>Replay dead letters</button>
             <button class="btn s sm" type="button" id="b-reset">Reset</button>
           </div>
-          <div class="note"><b>Try this:</b> set <code>down</code>, send a burst, and let everything dead-letter. Then switch to <code>healthy</code> and press replay — nothing is lost, and nothing is applied twice.</div>
+          <div class="note"><b>The test that matters:</b> set <code>down</code>, send a burst, let everything dead-letter. Switch to <code>healthy</code> and replay. Nothing is lost, and the trace shows where the server recognised a key and declined to apply it twice.</div>
         </div>
       </div>
 
-      <!-- visual -->
       <div>
         <div class="lanes">
           <div class="lane">
@@ -147,116 +249,109 @@
         </div>
       </div>
     </div>
-  </div></section>
 
-  <!-- ===================== WATERFALL ===================== -->
-  <section><div class="wrap">
-    <div class="shead">
+    <div style="margin-top:26px">
       <div class="lab">Attempt waterfall</div>
-      <h2>Every attempt, to scale</h2>
-      <p>One row per message. Bars are real measured request durations; the thin connectors are the backoff waits between attempts. The gaps widen because that is the whole point.</p>
-    </div>
-    <div class="panel">
-      <div class="wf" id="wf"><p style="font-size:.85rem; color:var(--ink-3)">Send some traffic to populate this.</p></div>
-    </div>
-  </div></section>
-
-  <!-- ===================== BACKOFF CURVE ===================== -->
-  <section><div class="wrap">
-    <div class="shead">
-      <div class="lab">The schedule</div>
-      <h2>Exponential backoff, with jitter</h2>
-      <p>Doubling the wait is the easy half. The shaded band is the part that matters at scale: without randomisation, every client that failed during the same outage retries at the same instant and knocks the service over again the moment it recovers.</p>
-    </div>
-    <div class="diagram">
-      <svg viewBox="0 0 860 260" role="img" aria-label="Chart of retry delay by attempt number: base delays of 0.8, 1.6 and 3.2 seconds with a shaded jitter band spanning half to full of each delay.">
-        <!-- axes -->
-        <line class="dgrid" x1="62" y1="30" x2="62" y2="204"/>
-        <line class="dgrid" x1="62" y1="204" x2="806" y2="204"/>
-        <text class="dttl" x="62" y="22">DELAY BEFORE NEXT ATTEMPT</text>
-
-        <!-- y ticks: 0, 1s, 2s, 3s, 4s  (204 = 0s, 40 = 4s) -->
-        <line class="dgrid" x1="62" y1="163" x2="806" y2="163" opacity=".55"/>
-        <line class="dgrid" x1="62" y1="122" x2="806" y2="122" opacity=".55"/>
-        <line class="dgrid" x1="62" y1="81"  x2="806" y2="81"  opacity=".55"/>
-        <line class="dgrid" x1="62" y1="40"  x2="806" y2="40"  opacity=".55"/>
-        <text class="dsub" x="30" y="207">0s</text>
-        <text class="dsub" x="30" y="166">1s</text>
-        <text class="dsub" x="30" y="125">2s</text>
-        <text class="dsub" x="30" y="84">3s</text>
-        <text class="dsub" x="30" y="43">4s</text>
-
-        <!-- jitter bands: equal jitter = delay/2 .. delay -->
-        <rect class="dbox-a" x="140" y="171" width="86" height="16" rx="3" opacity=".55"/>
-        <rect class="dbox-a" x="344" y="138" width="86" height="33" rx="3" opacity=".55"/>
-        <rect class="dbox-a" x="548" y="73"  width="86" height="65" rx="3" opacity=".55"/>
-
-        <!-- nominal delay markers -->
-        <line class="dline-a" x1="140" y1="171" x2="226" y2="171"/>
-        <line class="dline-a" x1="344" y1="138" x2="430" y2="138"/>
-        <line class="dline-a" x1="548" y1="73"  x2="634" y2="73"/>
-
-        <!-- attempt labels -->
-        <text class="dsub" x="140" y="222">after attempt 1</text>
-        <text class="dlab" x="140" y="166">0.8s</text>
-        <text class="dsub" x="344" y="222">after attempt 2</text>
-        <text class="dlab" x="344" y="133">1.6s</text>
-        <text class="dsub" x="548" y="222">after attempt 3</text>
-        <text class="dlab" x="548" y="68">3.2s</text>
-
-        <!-- give up -->
-        <line class="dline-d" x1="752" y1="40" x2="752" y2="204"/>
-        <text class="dsub" x="700" y="222">attempt 4 fails</text>
-        <text class="dlab" x="676" y="33" style="fill:var(--crit)">→ dead letter</text>
-
-        <text class="dsub" x="140" y="243">shaded band = actual randomised wait (half to full)</text>
-      </svg>
+      <p style="font-size:.88rem; color:var(--ink-2); margin-top:8px; max-width:62ch">One row per message. Bars are real measured request durations; thin connectors are the backoff waits. The gaps widen because that is the point.</p>
+      <div class="panel" style="margin-top:12px">
+        <div class="wf" id="wf"><p style="font-size:.85rem; color:var(--ink-3)">Send some traffic to populate this.</p></div>
+      </div>
     </div>
   </div></section>
 
-  <!-- ===================== WHY ===================== -->
+  <!-- ===================== 5. IMPLEMENTATION ===================== -->
   <section><div class="wrap">
     <div class="shead">
-      <div class="lab">Why this is harder than it looks</div>
-      <h2>Three things a retry loop gets wrong</h2>
+      <div class="lab">Implementation process</div>
+      <h2>Building the retry path</h2>
     </div>
-    <div class="prose">
-      <p><strong>Retrying immediately makes an outage worse.</strong> A service returning 503 is usually telling you it is already overloaded. Three fast retries from every client turns a brownout into an outage. The delay is not politeness — it is the mechanism that lets the downstream recover.</p>
-      <p><strong>Synchronised retries cause a second outage.</strong> If every client backs off by exactly one second, every client that failed during the same window returns at exactly the same instant. The service comes up, takes the full thundering herd, and falls over again. Jitter — randomising each client’s wait within a range — is what turns a spike back into a spread.</p>
-      <p><strong>A timeout is not a failure.</strong> This is the one that quietly corrupts data. When a request times out, you do not know whether the write landed. Retrying may apply it twice. An <em>idempotency key</em> is what makes that safe: the server records the key on first success, and a retry carrying the same key returns the original result without re-applying anything. Try it — every message here carries one, and the <code>replay</code> flag in the trace shows when the server recognised it.</p>
-      <p>And once the retry budget is spent, the message has to go somewhere inspectable. A <strong>dead-letter queue</strong> is the difference between “we lost seventeen orders last Tuesday and found out at month-end” and “seventeen orders are queued, here they are, replay when the vendor is back.”</p>
+    <div class="steps">
+      <div class="step"><div>
+        <h4>Derive the attempt count from the cycle budget</h4>
+        <p>Start from the refresh interval, subtract a safety margin, and work out how many doublings fit. Picking “3 retries” because it sounds reasonable is how a poller ends up taking longer than its own interval.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Set a timeout on every request, without exception</h4>
+        <p>A request with no deadline is a leak — it holds a connection, a worker and a slot in the cycle indefinitely. The timeout counts as a failed attempt, which is exactly what it is.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Jitter the delay, don’t just double it</h4>
+        <p>Equal jitter: wait half the nominal delay plus a random half. Without it, every client that failed during the same outage returns at the same instant and knocks the recovering service over again.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Attach an idempotency key before the first attempt</h4>
+        <p>Not on retry — on the first send. The key has to be stable across all attempts of the same logical operation, which means generating it when the operation is created, not when it is retried.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Honour <code>Retry-After</code> as a floor</h4>
+        <p>When a service tells you when to come back, it knows something you don’t. Take the larger of its number and your own backoff; never the smaller.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Dead-letter with replay, and alert on depth</h4>
+        <p>Once the budget is spent the message goes somewhere inspectable and re-drivable. A queue nobody watches is just a slower way to lose things, so depth is a monitored metric, not a debugging aid.</p>
+      </div></div>
     </div>
-  </div></section>
 
-  <!-- ===================== RULES ===================== -->
-  <section><div class="wrap">
-    <div class="shead">
-      <div class="lab">What this implements</div>
-      <h2>The rules, and where they come from</h2>
-    </div>
-    <div class="scroller">
+    <div class="scroller" style="margin-top:28px">
       <table>
         <thead><tr><th>Rule</th><th>Here</th><th>Precedent</th></tr></thead>
         <tbody>
           <tr><td><b>Exponential backoff</b></td><td>800ms, doubling per attempt</td><td>Standard across AWS SDKs, Google APIs, Stripe</td></tr>
-          <tr><td><b>Equal jitter</b></td><td>Actual wait is random between half and full of the nominal delay</td><td>AWS Architecture Blog, “Exponential Backoff and Jitter”</td></tr>
-          <tr><td><b>Bounded attempts</b></td><td>4, then dead-letter</td><td>Retrying forever is a queue that never drains</td></tr>
-          <tr><td><b>Idempotency keys</b></td><td>Per-message key; server no-ops a repeat</td><td>Stripe’s <code>Idempotency-Key</code> header</td></tr>
-          <tr><td><b>Honour <code>Retry-After</code></b></td><td>Sent by the endpoint on 503 and respected as a floor</td><td>RFC 9110 §10.2.3</td></tr>
-          <tr><td><b>Dead-letter with replay</b></td><td>Failed messages held and re-drivable</td><td>AWS SQS redrive</td></tr>
-          <tr><td><b>Timeouts are failures</b></td><td>2s client timeout, aborts and counts as an attempt</td><td>A request with no deadline is a leak</td></tr>
+          <tr><td><b>Equal jitter</b></td><td>random between half and full of nominal</td><td>AWS Architecture Blog, “Exponential Backoff and Jitter”</td></tr>
+          <tr><td><b>Bounded attempts</b></td><td>4, sized to fit a 60s cycle</td><td>Retrying forever is a queue that never drains</td></tr>
+          <tr><td><b>Idempotency keys</b></td><td>per-message, server no-ops a repeat</td><td>Stripe’s <code>Idempotency-Key</code> header</td></tr>
+          <tr><td><b>Honour <code>Retry-After</code></b></td><td>sent on 503, respected as a floor</td><td>RFC 9110 §10.2.3</td></tr>
+          <tr><td><b>Dead-letter with replay</b></td><td>held and re-drivable</td><td>AWS SQS redrive</td></tr>
+          <tr><td><b>Timeouts are failures</b></td><td>2s client timeout, counts as an attempt</td><td>A request with no deadline is a leak</td></tr>
         </tbody>
       </table>
     </div>
-    <p style="margin-top:20px; font-size:.87rem; color:var(--ink-2)">
-      Source: <a href="https://github.com/ivantsangwork/integration-lab/blob/main/functions/api/sim/endpoint.ts"><code>functions/api/sim/endpoint.ts</code></a> ·
+  </div></section>
+
+  <!-- ===================== 6. USE CASES ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Use cases</div>
+      <h2>Where this runs</h2>
+    </div>
+    <div class="uses">
+      <div class="use">
+        <div class="role">System A · ingest path</div>
+        <h4><a href="https://cryptofundingwatch.com/" style="color:inherit">CryptoFundingWatch</a></h4>
+        <p>Five venues on a fixed cycle. The retry budget is sized to fit inside the interval, and a venue that exhausts it is stale-flagged rather than dropped — the next cycle re-fetches it anyway. Dead-lettering is almost redundant here, which is itself the finding.</p>
+        <div class="out"><b>Tests:</b> budget vs cycle, partial availability<br><b>Cost of failure:</b> low — data is re-fetchable</div>
+      </div>
+      <div class="use">
+        <div class="role">System B · alert path</div>
+        <h4><a href="https://latticepulse.app" style="color:inherit">LatticePulse</a></h4>
+        <p>An alert fires once. Dropping it loses the product; sending it twice at 3am loses the user. Both directions are expensive, so the alert path needs the full apparatus — idempotency key, dead-letter queue, monitored depth — that the ingest path barely uses.</p>
+        <div class="out"><b>Tests:</b> exactly-once delivery pressure<br><b>Cost of failure:</b> high in both directions</div>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- ===================== 7. FINDINGS ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Findings</div>
+      <h2>What the bench showed</h2>
+    </div>
+    <div class="prose">
+      <p><strong>In a polling system, the next cycle is the real retry.</strong> This was the finding that surprised me, and it only became visible by running the same bench against both systems. CryptoFundingWatch re-fetches everything every cycle, so an in-cycle retry only needs to cover a transient blip — four attempts, under six seconds, roughly 9% of the interval. Retrying harder than that buys nothing, because a genuine outage will still be an outage sixty seconds later, and the cycle will handle it. <strong>Dead-lettering an ingest fetch is close to pointless</strong>; stale-flagging it is the correct answer.</p>
+      <p><strong>Alerts invert every one of those conclusions.</strong> An alert is one-shot, so there is no next cycle to save you, and the full apparatus earns its keep. The general lesson is that <em>“add retry logic” is not a decision</em> — the right retry policy depends entirely on whether the operation is repeatable and what each failure direction costs. The same codebase needs two different answers.</p>
+      <p><strong>Retrying immediately makes an outage worse, and synchronised retries cause a second one.</strong> A 503 usually means the downstream is already overloaded; the delay is the mechanism that lets it recover. And if every client backs off by exactly one second, they all return at the same instant — jitter turns a spike back into a spread. Neither is subtle once stated, and both are routinely omitted.</p>
+      <p><strong>A timeout is the case that quietly corrupts data.</strong> You cannot know whether the write landed, so retrying may duplicate and not retrying may drop. The idempotency key is what converts that into a decidable question — press <code>slow</code> then replay in the bench above and watch the server decline to apply the same key twice.</p>
+    </div>
+    <p style="margin-top:22px; font-size:.87rem; color:var(--ink-2)">
+      Bench source: <a href="https://github.com/ivantsangwork/integration-lab/blob/main/functions/api/sim/endpoint.ts"><code>functions/api/sim/endpoint.ts</code></a> ·
       <a href="https://github.com/ivantsangwork/integration-lab/blob/main/public/retry/index.html"><code>public/retry/index.html</code></a>
+      <br>Related: <a href="/oauth/">bench 01 — auth &amp; token lifecycle</a>
     </p>
-    <p style="margin-top:18px"><a class="btn s" href="/">← Back to the lab</a></p>
+    <p style="margin-top:18px"><a class="btn s" href="/">← All benches</a></p>
   </div></section>
 
   <footer><div class="wrap">
-    <p><b>Live module.</b> Requests go to a real deployed endpoint and the latencies shown are measured, not scripted. The only thing staged is the failure itself — you choose when the downstream misbehaves, which is the one thing you can’t ask a production vendor to do on demand.</p>
+    <p><b>Live bench.</b> Requests go to a real deployed endpoint and the latencies shown are measured, not scripted. The only thing staged is the failure itself — you choose when the downstream misbehaves, which is the one thing you can’t ask a production vendor to do on demand.</p>
   </div></footer>
 
 </main>
@@ -324,14 +419,14 @@
               Math.max(4, Math.round(s.ms/6)) + 'px" title="attempt ' + s.n + " · " +
               Math.round(s.ms) + "ms · " + s.status + '"></span>';
       }).join("");
+      var n = r.segs.filter(function(s){ return s.kind !== "gap"; }).length;
       var end = r.dead
         ? '<span class="wfend" style="color:var(--crit)">dead-lettered</span>'
-        : '<span class="wfend" style="color:var(--ok)">delivered · ' + r.segs.filter(function(s){return s.kind!=="gap";}).length + ' attempt' + (r.segs.filter(function(s){return s.kind!=="gap";}).length>1?"s":"") + "</span>";
+        : '<span class="wfend" style="color:var(--ok)">delivered · ' + n + ' attempt' + (n>1?"s":"") + "</span>";
       return '<div class="wfrow"><span>' + r.id + '</span><span class="wftrack">' + track + end + "</span></div>";
     }).join("");
   }
 
-  // ------------------------------------------------------------ delivery
   async function deliver(id, key){
     var row = { id:id, segs:[], dead:false };
     rows.push(row);
@@ -383,7 +478,6 @@
         return;
       }
 
-      // equal jitter: half the nominal delay, plus a random half
       var nominal = BASE_MS * Math.pow(2, attempt - 1);
       var delay = Math.round(nominal/2 + Math.random() * nominal/2);
       row.segs.push({ kind:"gap", ms:delay });
@@ -402,7 +496,6 @@
     }
   }
 
-  // ------------------------------------------------------------ controls
   Array.prototype.forEach.call(document.querySelectorAll(".mode"), function(b){
     b.addEventListener("click", function(){
       mode = b.dataset.m;
