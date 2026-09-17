@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Schema Normalisation Bench</title>
+<meta name="description" content="Bench 02 — collapsing five exchange APIs and four social/regulatory feeds into one canonical model, and detecting upstream schema drift before it corrupts the output.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<link rel="stylesheet" href="/assets/lab.css">
+<style>
+  .aim{background:var(--surface); border:1px solid var(--rule); border-left:3px solid var(--accent);
+    border-radius:0 10px 10px 0; padding:20px 22px}
+  .aim .q{font-family:var(--serif); font-size:1.18rem; line-height:1.5; color:var(--ink)}
+  .aim dl{display:grid; grid-template-columns:auto 1fr; gap:6px 16px; margin:14px 0 0;
+    font-size:.82rem; font-family:var(--mono)}
+  .aim dt{color:var(--ink-3)} .aim dd{margin:0; color:var(--ink-2)}
+
+  .raws{display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:1px;
+    background:var(--con-rule); border:1px solid var(--con-rule); border-radius:10px 10px 0 0; overflow:hidden}
+  .raw{background:var(--con-bg); padding:11px 12px 13px; min-width:0}
+  .raw .src{font-family:var(--mono); font-size:.66rem; text-transform:uppercase; letter-spacing:.07em;
+    color:var(--con-acc); display:flex; justify-content:space-between; align-items:center; gap:6px}
+  .raw .badge{font-size:.58rem; border:1px solid currentColor; border-radius:3px; padding:1px 4px;
+    color:var(--con-ink-2); letter-spacing:.05em}
+  .raw pre{font-family:var(--mono); font-size:.67rem; line-height:1.6; color:var(--con-ink);
+    margin:8px 0 0; white-space:pre-wrap; word-break:break-word}
+  .raw .k{color:var(--con-ink-2)}
+  .raw.bad{background:#150F13}
+  .raw.bad .src{color:var(--con-crit)}
+
+  .canon{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:.76rem}
+  .canon th{font-size:.62rem; padding:0 12px 8px 0}
+  .canon td{padding:9px 12px 9px 0; color:var(--ink-2)}
+  .canon td.v{color:var(--ink)}
+  .canon tr.in{animation:slide .3s ease}
+  @keyframes slide{from{opacity:0; transform:translateX(-6px)}to{opacity:1; transform:none}}
+  .flag{color:var(--warn)} .bad{color:var(--crit)}
+  .eq{color:var(--ok)}
+
+  .steps{counter-reset:s; display:flex; flex-direction:column; gap:16px}
+  .step{counter-increment:s; display:grid; grid-template-columns:30px 1fr; gap:14px}
+  .step::before{content:counter(s); font-family:var(--mono); font-size:.8rem; color:var(--accent);
+    border:1px solid var(--rule-2); border-radius:50%; width:28px; height:28px;
+    display:grid; place-items:center}
+  .step h4{font-size:.95rem}
+  .step p{font-size:.87rem; color:var(--ink-2); margin-top:5px}
+
+  .uses{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px}
+  .use{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:19px}
+  .use .role{font-family:var(--mono); font-size:.64rem; text-transform:uppercase;
+    letter-spacing:.08em; color:var(--accent)}
+  .use h4{font-size:1rem; margin-top:5px}
+  .use p{font-size:.86rem; color:var(--ink-2); margin-top:9px}
+  .use .out{margin-top:12px; padding-top:11px; border-top:1px dashed var(--rule-2);
+    font-family:var(--mono); font-size:.74rem; color:var(--ink-3)}
+  .use .out b{color:var(--ink-2); font-weight:500}
+
+  .toggle{display:flex; gap:8px; flex-wrap:wrap}
+  .tg{padding:8px 13px; border-radius:6px; border:1px solid var(--rule-2); background:var(--surface);
+    color:var(--ink); cursor:pointer; font-family:var(--mono); font-size:.78rem}
+  .tg:hover{border-color:var(--accent)}
+  .tg[aria-pressed="true"]{border-color:var(--accent); background:var(--accent-soft); color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap topin">
+    <a class="brand" href="/"><span class="dot"></span>Integration&nbsp;Lab</a>
+    <span class="crumb">/ bench 02 — schema normalisation</span>
+    <span class="chip live">live</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- ===================== 1. TESTING AIM ===================== -->
+  <section><div class="wrap">
+    <div class="lab">Bench 02</div>
+    <h1 style="margin-top:12px">Schema normalisation</h1>
+
+    <div class="aim" style="margin-top:24px; max-width:76ch">
+      <div class="lab" style="margin-bottom:10px">Testing aim</div>
+      <p class="q">Can N heterogeneous source schemas be collapsed into one canonical model such that adding source N+1 touches exactly one file — and nothing downstream learns that the source exists?</p>
+      <dl>
+        <dt>success</dt><dd>a new adapter ships without editing the scorer, the store, or the view</dd>
+        <dt>failure</dt><dd>any source-specific branch appears outside its own adapter</dd>
+        <dt>also testing</dt><dd>whether an undocumented upstream field rename is caught at the boundary</dd>
+      </dl>
+    </div>
+  </div></section>
+
+  <!-- ===================== 2. PAIN POINT ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Pain point</div>
+      <h2>Five exchanges, five answers to the same question</h2>
+    </div>
+    <div class="prose">
+      <p>CryptoFundingWatch exists to answer one question: <strong>which perpetual has the best funding spread right now?</strong> Answering it means putting five venues’ numbers side by side. The venues make that surprisingly hard.</p>
+      <p>They disagree on the <strong>identifier</strong> — the same instrument is <code>BTCUSDT</code>, <code>BTC-USD-SWAP</code>, <code>BTC</code>, <code>BTC-PERP</code>, and <code>PF_XBTUSD</code> depending on who you ask. Kraken still calls Bitcoin XBT.</p>
+      <p>They disagree on the <strong>field name and type</strong> — <code>lastFundingRate</code> as a string, <code>fundingRate</code> as a string, <code>funding</code> as a string, <code>funding_rate</code> as a string, <code>fundingRate</code> as a float.</p>
+      <p>They disagree on the <strong>timestamp</strong> — epoch milliseconds, epoch milliseconds as a string, epoch seconds, ISO 8601, ISO 8601 with milliseconds.</p>
+      <p>And most dangerously, they disagree on the <strong>funding interval</strong>. A rate quoted per eight hours and a rate quoted per hour are not the same kind of number, and nothing in the payload shouts about it. Put them in the same column and the ranking is simply wrong — quietly, plausibly, and in the direction that loses money.</p>
+      <p><strong>LatticePulse has the harder version of this problem.</strong> Its four sources aren’t different formats of the same thing; they’re different <em>kinds</em> of thing. A Reddit thread with 284 upvotes and an insider buying 12,000 shares are both evidence about a ticker, but there is no honest exchange rate between them. Forcing both into one number at the adapter throws away the distinction the scorer needs.</p>
+    </div>
+  </div></section>
+
+  <!-- ===================== 3. ARCHITECTURE ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Solution architecture</div>
+      <h2>Adapters own every difference</h2>
+      <p>One adapter per source, each a pure function from that source’s raw payload to the canonical model. Everything downstream is source-agnostic by construction — not by discipline.</p>
+    </div>
+    <div class="diagram">
+      <svg viewBox="0 0 940 360" role="img" aria-label="Architecture: five raw sources each pass through their own adapter into a single canonical model, which feeds the scorer and view. A validator sits at the adapter boundary and flags drift.">
+        <text class="dttl" x="8" y="18">RAW</text>
+        <text class="dttl" x="252" y="18">ADAPTER (one per source)</text>
+        <text class="dttl" x="596" y="18">CANONICAL</text>
+        <text class="dttl" x="800" y="18">CONSUMERS</text>
+
+        <rect class="dbox" x="8" y="30" width="150" height="34" rx="5"/><text class="dsub" x="20" y="51">binance · 8h · ms</text>
+        <rect class="dbox" x="8" y="72" width="150" height="34" rx="5"/><text class="dsub" x="20" y="93">okx · 8h · ms string</text>
+        <rect class="dbox" x="8" y="114" width="150" height="34" rx="5"/><text class="dsub" x="20" y="135">hyperliquid · 1h · s</text>
+        <rect class="dbox" x="8" y="156" width="150" height="34" rx="5"/><text class="dsub" x="20" y="177">coinbase · 1h · ISO</text>
+        <rect class="dbox" x="8" y="198" width="150" height="34" rx="5"/><text class="dsub" x="20" y="219">kraken · 4h · XBT</text>
+
+        <rect class="dbox-a" x="252" y="30" width="270" height="202" rx="7"/>
+        <text class="dlab" x="270" y="56">Each adapter does exactly four things</text>
+        <text class="dsub" x="270" y="80">1 · map identifier → canonical instrument</text>
+        <text class="dsub" x="270" y="100">2 · convert rate to a common interval</text>
+        <text class="dsub" x="270" y="120">3 · parse timestamp → UTC instant</text>
+        <text class="dsub" x="270" y="140">4 · attach provenance + fetched_at</text>
+        <text class="dsub" x="270" y="168" style="fill:var(--accent)">validate on arrival — reject, don't coerce</text>
+        <text class="dsub" x="270" y="188">a missing required field flags the source,</text>
+        <text class="dsub" x="270" y="206">it does not produce a null row</text>
+
+        <path class="dline" d="M158 47 L252 47"/><path class="dline" d="M244 43 l8 4 -8 4"/>
+        <path class="dline" d="M158 89 L252 89"/><path class="dline" d="M244 85 l8 4 -8 4"/>
+        <path class="dline" d="M158 131 L252 131"/><path class="dline" d="M244 127 l8 4 -8 4"/>
+        <path class="dline" d="M158 173 L252 173"/><path class="dline" d="M244 169 l8 4 -8 4"/>
+        <path class="dline" d="M158 215 L252 215"/><path class="dline" d="M244 211 l8 4 -8 4"/>
+
+        <rect class="dbox-a" x="596" y="60" width="164" height="142" rx="7"/>
+        <text class="dlab" x="612" y="86">One shape</text>
+        <text class="dsub" x="612" y="108">instrument</text>
+        <text class="dsub" x="612" y="126">venue</text>
+        <text class="dsub" x="612" y="144">annualised_pct</text>
+        <text class="dsub" x="612" y="162">observed_at (UTC)</text>
+        <text class="dsub" x="612" y="180">stale · provenance</text>
+
+        <path class="dline-a" d="M522 131 L596 131"/><path class="dline-a" d="M588 127 l8 4 -8 4"/>
+
+        <rect class="dbox" x="800" y="60" width="132" height="64" rx="7"/>
+        <text class="dlab" x="814" y="84">Scorer</text>
+        <text class="dsub" x="814" y="104">never sees a venue name</text>
+
+        <rect class="dbox" x="800" y="138" width="132" height="64" rx="7"/>
+        <text class="dlab" x="814" y="162">View</text>
+        <text class="dsub" x="814" y="182">stale flags, not gaps</text>
+
+        <path class="dline" d="M760 100 L800 92"/><path class="dline" d="M792 87 l8 5 -9 3"/>
+        <path class="dline" d="M760 162 L800 168"/><path class="dline" d="M792 163 l8 5 -9 3"/>
+
+        <text class="dttl" x="252" y="270">ADDING SOURCE N+1</text>
+        <line class="dgrid" x1="252" y1="280" x2="932" y2="280"/>
+        <text class="dsub" x="252" y="302">write one adapter · add one fixture set · run the shared conformance suite</text>
+        <text class="dsub" x="252" y="322" style="fill:var(--accent)">zero edits to the scorer, the store, or the view</text>
+        <text class="dsub" x="252" y="342">if a downstream edit is needed, the canonical model was wrong, not the source</text>
+      </svg>
+    </div>
+  </div></section>
+
+  <!-- ===================== 4. LIVE BENCH ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Live bench</div>
+      <h2>Run the adapters</h2>
+      <p>Representative payload shapes for each source. Press run and watch them collapse into one model — then break one and see what the validator does.</p>
+    </div>
+
+    <div class="stack" style="gap:16px">
+      <div class="panel stack">
+        <div class="toggle" role="group" aria-label="Fixture set">
+          <button class="tg" type="button" id="t-cfw" aria-pressed="true">CryptoFundingWatch · 5 exchanges</button>
+          <button class="tg" type="button" id="t-lp" aria-pressed="false">LatticePulse · 4 source types</button>
+        </div>
+        <div class="btnrow">
+          <button class="btn p sm" type="button" id="b-run">Run adapters</button>
+          <button class="btn s sm" type="button" id="b-drift">Inject schema drift</button>
+          <button class="btn s sm" type="button" id="b-reset">Reset</button>
+        </div>
+        <div class="note" id="hint"><b>Watch the first two rows.</b> Binance quotes <code>0.00010000</code> and Hyperliquid quotes <code>0.0000125</code> — an eight-fold difference in the raw payload. Annualised, they are the same number. That is the entire argument for normalising at the boundary.</div>
+      </div>
+
+      <div>
+        <div class="raws" id="raws"></div>
+        <div class="console" style="border-radius:0 0 10px 10px; border-top:0">
+          <div class="conhead">
+            <div class="t"><b>canonical</b> · one shape, one clock</div>
+            <div class="dotstate" id="dot"><i></i><span id="dot-t">idle</span></div>
+          </div>
+          <div class="conbody" style="max-height:none; padding:14px">
+            <div class="scroller">
+              <table class="canon" id="canon"><tbody><tr><td style="color:var(--con-ink-2)">press “Run adapters”</td></tr></tbody></table>
+            </div>
+          </div>
+          <div class="meters three">
+            <div class="meter"><div class="l">Sources in</div><div class="v num" id="m-in">—</div></div>
+            <div class="meter"><div class="l">Rows out</div><div class="v num" id="m-out">—</div></div>
+            <div class="meter"><div class="l">Rejected</div><div class="v num" id="m-rej">0</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- ===================== 5. IMPLEMENTATION ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Implementation process</div>
+      <h2>Six steps, in this order</h2>
+      <p>The order matters more than any individual step — defining the canonical model after writing adapters produces a model shaped like whichever source came first.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div>
+        <h4>Define the canonical model from the consumer, not the sources</h4>
+        <p>Ask what the scorer and the view need, and design backwards. A model built as the union of every source’s fields inherits every source’s accidents — and grows a nullable column each time you add a venue.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>One adapter per source, as a pure function</h4>
+        <p>Raw payload in, canonical records out, no I/O and no shared state. Pure means the adapter is testable against a saved fixture without a network, which is what makes the conformance suite in step six possible.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Validate on arrival — reject rather than coerce</h4>
+        <p>A missing or unparseable required field marks that source degraded. It never emits a row with a null rate, because a null that reaches the scorer becomes a zero somewhere, and a zero sorts.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Convert units at the boundary, never downstream</h4>
+        <p>Funding intervals are annualised inside the adapter that knows the interval. Timestamps become UTC instants there too. If a unit conversion happens anywhere else, it will eventually happen twice or not at all.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Carry provenance on every record</h4>
+        <p>Source, upstream identifier, fetch time, and adapter version ride along. When a number looks wrong at 3am, provenance is the difference between reproducing it in a minute and guessing for an hour.</p>
+      </div></div>
+      <div class="step"><div>
+        <h4>Run one shared conformance suite across every adapter</h4>
+        <p>The same fixture battery — missing field, wrong type, unexpected null, unknown symbol, clock skew — runs against all of them. A new adapter isn’t finished when it works; it’s finished when it fails the same way the others do.</p>
+      </div></div>
+    </div>
+  </div></section>
+
+  <!-- ===================== 6. USE CASES ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Use cases</div>
+      <h2>Where this runs</h2>
+    </div>
+    <div class="uses">
+      <div class="use">
+        <div class="role">System A</div>
+        <h4><a href="https://cryptofundingwatch.com/" style="color:inherit">CryptoFundingWatch</a></h4>
+        <p>Five exchange adapters behind one instrument model. The scoring engine ranks by annualised spread and has no knowledge that Kraken calls Bitcoin XBT or that Hyperliquid quotes hourly. Adding a sixth venue is an adapter and a fixture set.</p>
+        <div class="out"><b>Result:</b> incomparable raw numbers become one sortable column<br><b>Tests:</b> uniform cadence, numeric precision, symbol mapping</div>
+      </div>
+      <div class="use">
+        <div class="role">System B</div>
+        <h4><a href="https://latticepulse.app" style="color:inherit">LatticePulse</a></h4>
+        <p>Four adapters producing a <em>typed</em> attention event rather than a single number — ticker, instant, kind, provenance, and the source-native payload. The scorer applies per-kind weights, so a Form 4 purchase and a Reddit thread stay distinguishable all the way through.</p>
+        <div class="out"><b>Result:</b> ragged cadences share one timeline without averaging away meaning<br><b>Tests:</b> mixed media types, 15–30 min vs minute-level polling</div>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- ===================== 7. FINDINGS ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Findings</div>
+      <h2>What the bench showed</h2>
+    </div>
+    <div class="prose">
+      <p><strong>Normalise identity and time; do not normalise meaning.</strong> This is the difference between the two systems, and it took building both to see it. CryptoFundingWatch should collapse five rates into one comparable number, because they genuinely measure the same quantity. LatticePulse should not, because a Reddit score and an insider purchase do not. The canonical model’s job is to agree on <em>which ticker</em> and <em>when</em> — agreeing on <em>how much it matters</em> is the scorer’s job, and moving it earlier destroys information.</p>
+      <p><strong>Validation at the boundary converts a silent corruption into a visible outage.</strong> When the drift button renames a field, the affected source drops out and flags itself while the rest keep producing. Without that check the adapter emits nulls, the scorer reads them as zeros, and the venue quietly ranks bottom — a wrong answer that looks like a right one.</p>
+      <p><strong>Adapter purity is what makes the conformance suite possible</strong>, and the conformance suite is what makes adding a source boring. That’s the actual goal: the sixth exchange should be a dull afternoon, not a release.</p>
+    </div>
+    <p style="margin-top:22px; font-size:.87rem; color:var(--ink-2)">
+      Bench source: <a href="https://github.com/ivantsangwork/integration-lab/blob/main/public/schemas/index.html"><code>public/schemas/index.html</code></a> ·
+      Related: <a href="/retry/">bench 03 — retry &amp; dead letter</a>
+    </p>
+    <p style="margin-top:18px"><a class="btn s" href="/">← All benches</a></p>
+  </div></section>
+
+  <footer><div class="wrap">
+    <p><b>Fixtures are representative, not captured.</b> The payload shapes below mirror the real differences between these APIs — field names, types, timestamp formats, symbol conventions and funding intervals — but they are hand-written examples rather than recorded responses. The normalisation arithmetic is real.</p>
+  </div></footer>
+
+</main>
+
+<script>
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+
+  // ---- annualisation: rate × periods-per-day × 365 ----
+  var MULT = { 1:8760, 4:2190, 8:1095 };
+
+  var CFW = [
+    { src:"binance", badge:"8h · ms", drift:false,
+      raw:{ symbol:"BTCUSDT", lastFundingRate:"0.00010000", fundingTime:1789603200000, markPrice:"63112.40" },
+      pick:function(r){ return { sym:r.symbol, rate:parseFloat(r.lastFundingRate), hrs:8, t:r.fundingTime }; },
+      need:"lastFundingRate" },
+    { src:"okx", badge:"8h · ms string", drift:false,
+      raw:{ instId:"BTC-USD-SWAP", fundingRate:"0.000025", fundingTime:"1789603200000" },
+      pick:function(r){ return { sym:r.instId, rate:parseFloat(r.fundingRate), hrs:8, t:parseInt(r.fundingTime,10) }; },
+      need:"fundingRate" },
+    { src:"hyperliquid", badge:"1h · epoch s", drift:false,
+      raw:{ coin:"BTC", funding:"0.0000125", premium:"0.00011", time:1789603200 },
+      pick:function(r){ return { sym:r.coin, rate:parseFloat(r.funding), hrs:1, t:r.time*1000 }; },
+      need:"funding" },
+    { src:"coinbase intx", badge:"1h · ISO", drift:false,
+      raw:{ product_id:"BTC-PERP", funding_rate:"0.00003", time:"2026-09-17T08:00:00Z" },
+      pick:function(r){ return { sym:r.product_id, rate:parseFloat(r.funding_rate), hrs:1, t:Date.parse(r.time) }; },
+      need:"funding_rate" },
+    { src:"kraken", badge:"4h · XBT", drift:false,
+      raw:{ symbol:"PF_XBTUSD", fundingRate:0.0000125, timestamp:"2026-09-17T08:00:00.000Z" },
+      pick:function(r){ return { sym:r.symbol, rate:r.fundingRate, hrs:4, t:Date.parse(r.timestamp) }; },
+      need:"fundingRate" }
+  ];
+
+  var LP = [
+    { src:"x", badge:"social · ~2 min", drift:false,
+      raw:{ id:"1839442210", text:"$NVDA volume is unreal today", created_at:"2026-09-17T08:14:22Z",
+            public_metrics:{ retweet_count:41, like_count:320 } },
+      pick:function(r){ return { tick:"NVDA", kind:"social_post", t:Date.parse(r.created_at),
+            detail:r.public_metrics.like_count + " likes · " + r.public_metrics.retweet_count + " RT" }; },
+      need:"created_at" },
+    { src:"reddit", badge:"social · ~2 min", drift:false,
+      raw:{ kind:"t3", data:{ id:"1abcdz", subreddit:"wallstreetbets",
+            title:"NVDA unusual options flow", created_utc:1789604062, score:284, num_comments:96 } },
+      pick:function(r){ return { tick:"NVDA", kind:"social_post", t:r.data.created_utc*1000,
+            detail:r.data.score + " score · " + r.data.num_comments + " comments" }; },
+      need:"data.created_utc" },
+    { src:"sec form 4", badge:"filing · 15–30 min", drift:false,
+      raw:{ accessionNo:"0001234567-26-000123", issuerTradingSymbol:"NVDA", transactionCode:"P",
+            transactionShares:12000, transactionPricePerShare:118.40, periodOfReport:"2026-09-16" },
+      pick:function(r){ return { tick:r.issuerTradingSymbol, kind:"insider_buy",
+            t:Date.parse(r.periodOfReport + "T21:00:00Z"),
+            detail:"$" + (r.transactionShares*r.transactionPricePerShare/1e6).toFixed(2) + "M purchase" }; },
+      need:"issuerTradingSymbol" },
+    { src:"sec 8-k", badge:"filing · 15–30 min", drift:false,
+      raw:{ accessionNumber:"0001045810-26-000201", cik:"0001045810", formType:"8-K",
+            items:["2.02","7.01"], filedAt:"2026-09-17T06:30:00-04:00" },
+      pick:function(r){ return { tick:"NVDA", kind:"company_event", t:Date.parse(r.filedAt),
+            detail:"items " + r.items.join(", ") }; },
+      need:"filedAt" }
+  ];
+
+  var set = "cfw", drifted = false;
+
+  function get(){ return set === "cfw" ? CFW : LP; }
+
+  function jsonHtml(o, broken){
+    var s = JSON.stringify(o, null, 1).replace(/[<>&]/g, function(c){
+      return { "<":"&lt;", ">":"&gt;", "&":"&amp;" }[c];
+    });
+    s = s.replace(/"([^"]+)":/g, '<span class="k">"$1"</span>:');
+    if (broken) s = s.replace(/<span class="k">"(fundingRate_v2|created_at_utc)"<\/span>/,
+      '<span style="color:var(--con-crit)">"$1"</span>');
+    return s;
+  }
+
+  function renderRaws(){
+    $("raws").innerHTML = get().map(function(s){
+      return '<div class="raw' + (s.drift ? " bad" : "") + '">'
+        + '<div class="src"><span>' + s.src + '</span><span class="badge">'
+        + (s.drift ? "schema changed" : s.badge) + "</span></div>"
+        + "<pre>" + jsonHtml(s.raw, s.drift) + "</pre></div>";
+    }).join("");
+    $("m-in").textContent = get().length;
+  }
+
+  function setDot(cls, t){
+    $("dot").className = "dotstate" + (cls ? " " + cls : "");
+    $("dot-t").textContent = t;
+  }
+
+  function run(){
+    var rows = [], rejected = 0;
+
+    get().forEach(function(s){
+      var out;
+      try { out = s.pick(s.raw); } catch (e) { out = null; }
+
+      var missing = s.drift || !out ||
+        (set === "cfw" ? !(out.rate === out.rate) : !out.t || out.t !== out.t);
+
+      if (missing){
+        rejected++;
+        rows.push({ bad:true, src:s.src, why:"required field " + s.need + " missing or unparseable" });
+        return;
+      }
+
+      if (set === "cfw"){
+        var ann = out.rate * MULT[out.hrs] * 100;
+        rows.push({
+          src:s.src,
+          a:"BTC-PERP",
+          b:out.rate.toExponential(3) + " / " + out.hrs + "h",
+          c:ann.toFixed(2) + "%",
+          d:new Date(out.t).toISOString().replace(".000",""),
+          raw:out.sym, ann:ann
+        });
+      } else {
+        rows.push({
+          src:s.src, a:out.tick, b:out.kind,
+          c:out.detail, d:new Date(out.t).toISOString().replace(".000","")
+        });
+      }
+    });
+
+    // highlight equal annualised values — the point of the whole exercise
+    if (set === "cfw"){
+      var counts = {};
+      rows.forEach(function(r){ if (!r.bad) counts[r.c] = (counts[r.c]||0)+1; });
+      rows.forEach(function(r){ if (!r.bad && counts[r.c] > 1) r.eq = true; });
+    }
+
+    var head = set === "cfw"
+      ? "<tr><th>venue</th><th>instrument</th><th>raw</th><th>annualised</th><th>observed_at (UTC)</th></tr>"
+      : "<tr><th>source</th><th>ticker</th><th>kind</th><th>payload</th><th>observed_at (UTC)</th></tr>";
+
+    var body = rows.map(function(r){
+      if (r.bad){
+        return '<tr class="in"><td class="bad">' + r.src + '</td><td class="bad" colspan="4">'
+          + '⚑ rejected — ' + r.why + ' · source flagged stale, others unaffected</td></tr>';
+      }
+      return '<tr class="in"><td>' + r.src + '</td><td class="v">' + r.a + "</td><td>" + r.b
+        + '</td><td class="v' + (r.eq ? " eq" : "") + '">' + r.c + "</td><td>" + r.d + "</td></tr>";
+    }).join("");
+
+    $("canon").innerHTML = "<thead>" + head + "</thead><tbody>" + body + "</tbody>";
+    $("m-out").textContent = rows.length - rejected;
+    var rej = $("m-rej");
+    rej.textContent = rejected;
+    rej.className = "v num" + (rejected ? " c" : "");
+    setDot(rejected ? "warn" : "on", rejected ? "degraded" : "normalised");
+
+    if (set === "cfw" && !rejected){
+      $("hint").innerHTML = '<b>Binance and Hyperliquid now read identically.</b> Raw, they were <code>0.00010000</code> per 8h and <code>0.0000125</code> per 1h — an eight-fold apparent gap. Annualised, both are <code>10.95%</code>. Sorting the raw column would have ranked them four places apart.';
+    }
+  }
+
+  function reset(){
+    drifted = false;
+    CFW.concat(LP).forEach(function(s){
+      s.drift = false;
+      if (s.raw.fundingRate_v2 !== undefined){ s.raw.lastFundingRate = s.raw.fundingRate_v2; delete s.raw.fundingRate_v2; }
+      if (s.raw.created_at_utc !== undefined){ s.raw.created_at = s.raw.created_at_utc; delete s.raw.created_at_utc; }
+    });
+    renderRaws();
+    $("canon").innerHTML = '<tbody><tr><td style="color:var(--con-ink-2)">press “Run adapters”</td></tr></tbody>';
+    $("m-out").textContent = "—"; $("m-rej").textContent = "0"; $("m-rej").className = "v num";
+    setDot("", "idle");
+  }
+
+  // ---- controls ----
+  $("t-cfw").addEventListener("click", function(){
+    set = "cfw"; $("t-cfw").setAttribute("aria-pressed","true"); $("t-lp").setAttribute("aria-pressed","false");
+    $("hint").innerHTML = '<b>Watch the first two rows.</b> Binance quotes <code>0.00010000</code> and Hyperliquid quotes <code>0.0000125</code> — an eight-fold difference in the raw payload. Annualised, they are the same number.';
+    reset();
+  });
+  $("t-lp").addEventListener("click", function(){
+    set = "lp"; $("t-lp").setAttribute("aria-pressed","true"); $("t-cfw").setAttribute("aria-pressed","false");
+    $("hint").innerHTML = '<b>Note what is <em>not</em> collapsed.</b> The canonical row keeps <code>kind</code> distinct — a Form 4 purchase and a Reddit thread never become one number here. Deciding how much each matters is the scorer’s job, not the adapter’s.';
+    reset();
+  });
+
+  $("b-run").addEventListener("click", run);
+
+  $("b-drift").addEventListener("click", function(){
+    var arr = get(), victim = arr[0];
+    if (set === "cfw"){
+      victim.raw.fundingRate_v2 = victim.raw.lastFundingRate;
+      delete victim.raw.lastFundingRate;
+    } else {
+      victim.raw.created_at_utc = victim.raw.created_at;
+      delete victim.raw.created_at;
+    }
+    victim.drift = true; drifted = true;
+    renderRaws();
+    $("hint").innerHTML = '<b>Upstream renamed a field without telling anyone.</b> This happens. Run the adapters again — that source is rejected and flagged, the other ' + (arr.length-1) + ' keep producing. Without validation it would have emitted a null, the scorer would have read zero, and the venue would have ranked bottom looking perfectly normal.';
+    run();
+  });
+
+  $("b-reset").addEventListener("click", reset);
+
+  renderRaws();
+})();
+</script>
+</body>
+</html>

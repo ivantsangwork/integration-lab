@@ -1,795 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Integration Lab</title>
+<meta name="description" content="A testing ground for the integration techniques behind CryptoFundingWatch and LatticePulse — isolated benches for schema normalisation, retry, auth, and scoring pipelines.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<link rel="stylesheet" href="/assets/lab.css">
 <style>
-  :root{
-    --ground:#F4F6F8; --surface:#FFFFFF; --surface-2:#E9ECF1; --surface-3:#DFE3EA;
-    --ink:#111823; --ink-2:#465063; --ink-3:#6E7889;
-    --rule:#DBE0E8; --rule-2:#C2C9D6;
-    --accent:#B4530A; --accent-2:#8E4007; --accent-soft:#FAEEE3;
-    --ok:#0F766E; --warn:#A16207; --crit:#BE123C;
-    --shadow:0 1px 2px rgba(17,24,35,.05), 0 8px 24px -12px rgba(17,24,35,.18);
+  .sys{display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:16px}
+  .syscard{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:20px;
+    display:flex; flex-direction:column; gap:12px}
+  .syscard h3{font-size:1.05rem}
+  .syscard h3 a{color:inherit; text-decoration:none}
+  .syscard h3 a:hover{color:var(--accent)}
+  .syscard .role{font-family:var(--mono); font-size:.66rem; text-transform:uppercase;
+    letter-spacing:.08em; color:var(--accent)}
+  .syscard p{font-size:.88rem; color:var(--ink-2)}
+  .facts{display:grid; grid-template-columns:auto 1fr; gap:5px 14px; font-family:var(--mono);
+    font-size:.76rem; margin-top:auto; padding-top:12px; border-top:1px dashed var(--rule-2)}
+  .facts dt{color:var(--ink-3)} .facts dd{margin:0; color:var(--ink-2)}
 
-    /* console surfaces stay dark in both themes — deliberate */
-    --con-bg:#0C111A; --con-bg-2:#141C27; --con-ink:#D8DEE8; --con-ink-2:#8994A6;
-    --con-rule:#222B39; --con-ok:#34D399; --con-warn:#FBBF24; --con-crit:#FB7185; --con-acc:#F0A44F;
-
-    --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
-    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    --serif:"IBM Plex Serif",ui-serif,Georgia,"Times New Roman",serif;
-    --wrap:1140px;
-  }
-  @media (prefers-color-scheme:dark){
-    :root:not([data-theme="light"]){
-      --ground:#0A0E14; --surface:#101720; --surface-2:#161F2A; --surface-3:#1D2733;
-      --ink:#E7ECF3; --ink-2:#A4AEBE; --ink-3:#798494;
-      --rule:#212A37; --rule-2:#2E3947;
-      --accent:#F0A44F; --accent-2:#F6BE7C; --accent-soft:#2A1B0D;
-      --ok:#2DD4BF; --warn:#FBBF24; --crit:#FB7185;
-      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
-    }
-  }
-  :root[data-theme="dark"]{
-    --ground:#0A0E14; --surface:#101720; --surface-2:#161F2A; --surface-3:#1D2733;
-    --ink:#E7ECF3; --ink-2:#A4AEBE; --ink-3:#798494;
-    --rule:#212A37; --rule-2:#2E3947;
-    --accent:#F0A44F; --accent-2:#F6BE7C; --accent-soft:#2A1B0D;
-    --ok:#2DD4BF; --warn:#FBBF24; --crit:#FB7185;
-    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  .benches{width:100%; border-collapse:collapse}
+  .benches th{padding-bottom:10px}
+  .benches td{padding:14px 14px 14px 0}
+  .benches .n{font-family:var(--mono); color:var(--accent); font-size:.8rem; width:26px}
+  .benches .name{color:var(--ink); font-weight:500; white-space:nowrap}
+  .benches .name a{color:inherit; text-decoration:none}
+  .benches .name a:hover{color:var(--accent)}
+  .benches .aim{color:var(--ink-2)}
+  .st{font-family:var(--mono); font-size:.64rem; text-transform:uppercase; letter-spacing:.07em;
+    padding:2px 7px; border-radius:3px; border:1px solid currentColor; white-space:nowrap}
+  .st.live{color:var(--ok)} .st.draft{color:var(--ink-3)} .st.part{color:var(--warn)}
+  .feeds{font-family:var(--mono); font-size:.72rem; color:var(--ink-3); white-space:nowrap}
+  @media (max-width:820px){
+    .benches thead{display:none}
+    .benches tr{display:grid; grid-template-columns:26px 1fr auto; gap:4px 10px;
+      padding:14px 0; border-bottom:1px solid var(--rule)}
+    .benches td{padding:0; border:0}
+    .benches .aim{grid-column:2 / -1}
+    .benches .feeds{grid-column:2 / -1}
   }
 
-  *{box-sizing:border-box}
-  body{background:var(--ground); color:var(--ink); font-family:var(--sans);
-       font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased;}
-  h1,h2,h3,h4{margin:0; text-wrap:balance; font-weight:600; line-height:1.18; letter-spacing:-.011em}
-  p{margin:0}
-  a{color:var(--accent); text-decoration-thickness:1px; text-underline-offset:2px}
-  :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:2px}
-  code,kbd{font-family:var(--mono)}
-
-  .wrap{max-width:var(--wrap); margin-inline:auto; padding-inline:20px}
-  .lab{font-size:.6875rem; text-transform:uppercase; letter-spacing:.1em;
-       font-weight:600; color:var(--ink-3); font-family:var(--mono)}
-  .num{font-variant-numeric:tabular-nums}
-
-  /* ---------- header ---------- */
-  header.top{position:sticky; top:env(safe-area-inset-top,0px); z-index:50;
-    background:color-mix(in srgb, var(--ground) 88%, transparent);
-    backdrop-filter:saturate(1.6) blur(10px); border-bottom:1px solid var(--rule)}
-  .topin{display:flex; align-items:center; gap:18px; height:56px}
-  .brand{display:flex; align-items:center; gap:9px; font-weight:600; letter-spacing:-.02em;
-    font-size:.95rem; color:var(--ink); text-decoration:none; flex:none}
-  .brand .dot{width:9px; height:9px; border-radius:50%; background:var(--accent);
-    box-shadow:0 0 0 3px var(--accent-soft); flex:none}
-  nav.links{display:flex; gap:20px; margin-left:auto; overflow-x:auto; scrollbar-width:none}
-  nav.links::-webkit-scrollbar{display:none}
-  nav.links a{color:var(--ink-2); text-decoration:none; font-size:.85rem; white-space:nowrap}
-  nav.links a:hover{color:var(--accent)}
-  .chip-proto{flex:none; font-family:var(--mono); font-size:.65rem; letter-spacing:.06em;
-    text-transform:uppercase; color:var(--warn); border:1px solid currentColor;
-    padding:3px 7px; border-radius:3px; opacity:.9}
-  @media (max-width:760px){ nav.links{display:none} }
-
-  /* ---------- hero ---------- */
-  .hero{padding-block:clamp(36px,5vw,68px) clamp(28px,4vw,48px)}
-  .herogrid{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.04fr); gap:clamp(28px,4vw,52px); align-items:center}
-  @media (max-width:900px){ .herogrid{grid-template-columns:1fr; gap:30px} }
-  h1{font-size:clamp(2rem,1.3rem+2.6vw,3.15rem); letter-spacing:-.028em}
-  h1 em{font-style:normal; color:var(--accent)}
-  .lede{margin-top:16px; color:var(--ink-2); font-size:1.0625rem; max-width:34em}
-  .cta{display:flex; flex-wrap:wrap; gap:10px; margin-top:24px}
-  .btn{display:inline-flex; align-items:center; gap:8px; padding:10px 16px; border-radius:6px;
-    font-size:.9rem; font-weight:500; border:1px solid transparent; cursor:pointer;
-    text-decoration:none; font-family:var(--sans)}
-  .btn.p{background:var(--accent); color:#fff; border-color:var(--accent)}
-  :root[data-theme="dark"] .btn.p, :root:not([data-theme="light"]) .btn.p{color:#1A1004}
-  @media (prefers-color-scheme:light){ :root:not([data-theme="dark"]) .btn.p{color:#fff} }
-  .btn.p:hover{background:var(--accent-2); border-color:var(--accent-2)}
-  .btn.s{background:var(--surface); color:var(--ink); border-color:var(--rule-2)}
-  .btn.s:hover{border-color:var(--accent); color:var(--accent)}
-  .creds{display:flex; flex-wrap:wrap; gap:8px 22px; margin-top:26px; padding-top:20px; border-top:1px solid var(--rule)}
-  .cred{font-size:.8rem; color:var(--ink-3)}
-  .cred b{display:block; font-family:var(--mono); font-size:1.02rem; color:var(--ink); font-weight:500}
-
-  /* ---------- console ---------- */
-  .console{background:var(--con-bg); border:1px solid var(--con-rule); border-radius:10px;
-    overflow:hidden; box-shadow:var(--shadow)}
-  .conhead{display:flex; align-items:center; gap:10px; padding:9px 13px;
-    background:var(--con-bg-2); border-bottom:1px solid var(--con-rule)}
-  .conhead .t{font-family:var(--mono); font-size:.73rem; color:var(--con-ink-2); letter-spacing:.02em}
-  .conhead .t b{color:var(--con-ink); font-weight:500}
-  .live{margin-left:auto; display:flex; align-items:center; gap:6px; font-family:var(--mono);
-    font-size:.66rem; color:var(--con-ok); text-transform:uppercase; letter-spacing:.08em}
-  .live i{width:6px; height:6px; border-radius:50%; background:var(--con-ok); animation:pulse 2s infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
-  .conbody{padding:13px; overflow-x:auto}
-  .trace{font-family:var(--mono); font-size:.78rem; line-height:1.85; color:var(--con-ink);
-    white-space:pre; min-width:min-content; margin:0}
-  .trace .m{color:var(--con-ink-2)}
-  .trace .ok{color:var(--con-ok)}
-  .trace .wn{color:var(--con-warn)}
-  .trace .cr{color:var(--con-crit)}
-  .trace .ac{color:var(--con-acc)}
-  .trace .row{display:block; opacity:0; animation:rowin .26s ease forwards}
-  @keyframes rowin{from{opacity:0; transform:translateY(-2px)}to{opacity:1; transform:none}}
-  @media (prefers-reduced-motion:reduce){
-    .trace .row{opacity:1; animation:none}
-    .live i{animation:none}
-  }
-
-  /* ---------- sections ---------- */
-  section{padding-block:clamp(40px,5vw,72px); border-top:1px solid var(--rule)}
-  .shead{max-width:60ch; margin-bottom:clamp(22px,3vw,34px)}
-  .shead h2{font-size:clamp(1.4rem,1.1rem+1.1vw,1.95rem); margin-top:9px}
-  .shead p{margin-top:11px; color:var(--ink-2); font-size:1rem}
-
-  /* modules */
-  .mods{display:grid; grid-template-columns:repeat(auto-fit,minmax(255px,1fr)); gap:1px;
-    background:var(--rule); border:1px solid var(--rule); border-radius:10px; overflow:hidden}
-  .mod{background:var(--surface); padding:20px 19px; display:flex; flex-direction:column; gap:9px}
-  .mod .hd{display:flex; align-items:baseline; gap:9px}
-  .mod .k{font-family:var(--mono); font-size:.72rem; color:var(--accent); font-weight:500}
-  .mod h3{font-size:1rem}
-  .mod p{font-size:.875rem; color:var(--ink-2)}
-  .mod .ev{margin-top:auto; padding-top:11px; font-size:.76rem; color:var(--ink-3);
-    border-top:1px dashed var(--rule-2); font-family:var(--mono); line-height:1.5}
-  .mod .ev b{color:var(--ink-2); font-weight:500}
-  .mod h3 a{color:inherit; text-decoration:none}
-  .mod h3 a:hover{color:var(--accent)}
-  .mod .go{font-family:var(--sans); font-size:.78rem; margin-left:8px; white-space:nowrap}
-  .ph{display:inline-block; font-family:var(--mono); font-size:.63rem; letter-spacing:.07em;
-    text-transform:uppercase; padding:2px 6px; border-radius:3px; border:1px solid var(--rule-2); color:var(--ink-3)}
-  .ph.mvp{color:var(--ok); border-color:currentColor}
-
-  /* demo shell */
-  .demo{display:grid; grid-template-columns:minmax(0,340px) minmax(0,1fr); gap:20px}
-  @media (max-width:880px){ .demo{grid-template-columns:1fr} }
-  .panel{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:18px}
-  .presets{display:flex; flex-direction:column; gap:8px; margin-top:13px}
-  .preset{text-align:left; padding:10px 12px; border-radius:6px; border:1px solid var(--rule-2);
-    background:var(--surface); color:var(--ink); cursor:pointer; font-family:var(--mono);
-    font-size:.78rem; line-height:1.45}
-  .preset:hover{border-color:var(--accent); color:var(--accent)}
-  .preset[aria-pressed="true"]{border-color:var(--accent); background:var(--accent-soft); color:var(--accent)}
-  .preset span{display:block; font-family:var(--sans); font-size:.68rem; color:var(--ink-3); margin-top:3px}
-  .preset[aria-pressed="true"] span{color:var(--accent)}
-  .meters{display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--con-rule);
-    border-top:1px solid var(--con-rule)}
-  .meter{background:var(--con-bg-2); padding:9px 12px}
-  .meter .l{font-family:var(--mono); font-size:.62rem; text-transform:uppercase;
-    letter-spacing:.08em; color:var(--con-ink-2)}
-  .meter .v{font-family:var(--mono); font-size:.95rem; color:var(--con-ink); font-variant-numeric:tabular-nums; margin-top:2px}
-  .meter .v.g{color:var(--con-ok)} .meter .v.w{color:var(--con-warn)}
-
-  /* map table */
-  .maptbl{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:.79rem}
-  .maptbl th{text-align:left; font-weight:500; color:var(--ink-3); font-size:.66rem;
-    text-transform:uppercase; letter-spacing:.07em; padding:0 10px 8px 0; border-bottom:1px solid var(--rule)}
-  .maptbl td{padding:8px 10px 8px 0; border-bottom:1px solid var(--rule); vertical-align:top}
-  .maptbl tr:last-child td{border-bottom:0}
-  .maptbl .src{color:var(--ink-2)}
-  .maptbl .dst{color:var(--ink)}
-  .maptbl .cf{text-align:right; font-variant-numeric:tabular-nums}
-  .flag{color:var(--warn)}
-  .scroller{overflow-x:auto}
-
-  /* patterns */
-  .pats{display:grid; grid-template-columns:repeat(auto-fit,minmax(272px,1fr)); gap:16px}
-  .pat{border-left:2px solid var(--accent); padding:2px 0 2px 16px}
-  .pat h4{font-size:.94rem}
-  .pat .who{font-family:var(--mono); font-size:.7rem; color:var(--accent); letter-spacing:.03em; margin-bottom:5px}
-  .pat p{font-size:.85rem; color:var(--ink-2); margin-top:6px}
-  .pat .impl{font-size:.78rem; color:var(--ink-3); margin-top:7px; font-family:var(--mono); line-height:1.5}
-
-  /* scenarios */
-  .scens{display:grid; grid-template-columns:repeat(auto-fit,minmax(285px,1fr)); gap:16px}
-  .scen{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:19px;
-    display:flex; flex-direction:column; gap:11px}
-  .scen .tag{align-self:flex-start; font-family:var(--mono); font-size:.62rem; text-transform:uppercase;
-    letter-spacing:.08em; color:var(--warn); border:1px solid currentColor; padding:2px 6px; border-radius:3px}
-  .scen h4{font-size:.96rem}
-  .ba{display:grid; gap:9px; font-size:.85rem}
-  .ba div{display:grid; grid-template-columns:52px 1fr; gap:10px}
-  .ba .k{font-family:var(--mono); font-size:.68rem; text-transform:uppercase; letter-spacing:.06em;
-    color:var(--ink-3); padding-top:2px}
-  .ba .b{color:var(--ink-2)} .ba .a{color:var(--ink)}
-
-  /* case study */
-  .case{display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:clamp(24px,3.5vw,46px); align-items:start}
-  @media (max-width:880px){ .case{grid-template-columns:1fr} }
-  .prose{font-family:var(--serif); font-size:1.0625rem; line-height:1.68; color:var(--ink-2); max-width:62ch}
-  .prose p+p{margin-top:15px}
-  .prose strong{color:var(--ink); font-weight:600}
-  .facts{display:grid; grid-template-columns:repeat(2,1fr); gap:1px; background:var(--rule);
-    border:1px solid var(--rule); border-radius:10px; overflow:hidden}
-  .fact{background:var(--surface); padding:15px}
-  .fact .v{font-family:var(--mono); font-size:1.5rem; font-weight:500; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
-  .fact .l{font-size:.75rem; color:var(--ink-3); margin-top:3px}
-
-  /* health */
-  .health{display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr)); gap:1px;
-    background:var(--con-rule)}
-  .hcell{background:var(--con-bg-2); padding:13px 15px}
-  .hcell .n{font-family:var(--mono); font-size:.73rem; color:var(--con-ink-2)}
-  .hcell .s{display:flex; align-items:center; gap:7px; margin-top:6px; font-family:var(--mono);
-    font-size:.84rem; color:var(--con-ink); font-variant-numeric:tabular-nums}
-  .hcell .s i{width:7px; height:7px; border-radius:50%; background:var(--con-ok); flex:none}
-  .hcell.down .s i{background:var(--con-crit)} .hcell.down .s{color:var(--con-crit)}
-  .hcell.retry .s i{background:var(--con-warn)} .hcell.retry .s{color:var(--con-warn)}
-
-  /* svg diagram */
-  .diagram{overflow-x:auto; padding-bottom:6px}
-  .diagram svg{display:block; min-width:880px; width:100%; height:auto}
-  .dbox{fill:var(--surface); stroke:var(--rule-2)}
-  .dbox-a{fill:var(--accent-soft); stroke:var(--accent)}
-  .dlab{fill:var(--ink); font-family:var(--sans); font-size:12.5px; font-weight:500}
-  .dsub{fill:var(--ink-3); font-family:var(--mono); font-size:10px}
-  .dttl{fill:var(--ink-3); font-family:var(--mono); font-size:9.5px; letter-spacing:.09em; text-transform:uppercase}
-  .dline{stroke:var(--rule-2); fill:none; stroke-width:1.4}
-  .dline-a{stroke:var(--accent); fill:none; stroke-width:1.6}
-  .dline-d{stroke:var(--rule-2); fill:none; stroke-width:1.3; stroke-dasharray:4 3}
-
-  /* cta */
-  .final{background:var(--surface); border:1px solid var(--rule); border-radius:12px;
-    padding:clamp(26px,4vw,44px); display:grid; gap:18px; box-shadow:var(--shadow)}
-  .final h2{font-size:clamp(1.3rem,1.05rem+1vw,1.8rem)}
-  .final p{color:var(--ink-2); max-width:56ch}
-
-  footer{padding-block:34px 44px; border-top:1px solid var(--rule); color:var(--ink-3); font-size:.82rem}
-  .note{background:var(--surface-2); border:1px solid var(--rule); border-left:2px solid var(--warn);
-    border-radius:0 7px 7px 0; padding:13px 16px; font-size:.83rem; color:var(--ink-2); margin-top:18px}
-  .note b{color:var(--ink)}
+  .notes li{color:var(--ink-2); font-size:.88rem; margin-bottom:9px}
+  .notes code{color:var(--ink)}
 </style>
+</head>
+<body>
 
 <header class="top">
   <div class="wrap topin">
-    <a class="brand" href="#top"><span class="dot"></span>Integration&nbsp;Lab</a>
-    <nav class="links">
-      <a href="#modules">Modules</a>
-      <a href="#ai">AI layer</a>
-      <a href="#architecture">Architecture</a>
-      <a href="#patterns">Patterns</a>
-      <a href="#production">Production</a>
-    </nav>
-    <span class="chip-proto">Prototype</span>
+    <a class="brand" href="/"><span class="dot"></span>Integration&nbsp;Lab</a>
+    <span class="crumb">/ engineering notebook</span>
+    <span class="chip live">7 benches</span>
   </div>
 </header>
 
-<main id="top">
+<main>
 
-  <!-- ============ HERO ============ -->
-  <div class="wrap hero">
-    <div class="herogrid">
-      <div>
-        <div class="lab">Ivan Tsang · Hong Kong UTC+8</div>
-        <h1 style="margin-top:14px">Integrations that keep talking at <em>3am</em>.</h1>
-        <p class="lede">A working lab of the things that actually break in production — OAuth token refresh, webhook retries, rate limits, reconciliation. Press a button and watch the failure path, not just the happy path.</p>
-        <div class="cta">
-          <a class="btn p" href="/oauth/">Run the OAuth playground</a>
-          <a class="btn s" href="#ai">See the AI action layer</a>
-        </div>
-        <div class="creds">
-          <div class="cred"><b class="num">10 yrs</b>corporate eBanking delivery</div>
-          <div class="cred"><b class="num">5</b>exchange APIs in production</div>
-          <div class="cred"><b class="num">142</b>instruments, 60s refresh</div>
-        </div>
-      </div>
-
-      <div class="console" aria-label="Example request trace">
-        <div class="conhead">
-          <div class="t"><b>POST</b> /hooks/whatsapp/inbound</div>
-          <div class="live"><i></i>live</div>
-        </div>
-        <div class="conbody">
-          <pre class="trace" id="trace"></pre>
-        </div>
-        <div class="meters">
-          <div class="meter"><div class="l">Total</div><div class="v num" id="m-total">—</div></div>
-          <div class="meter"><div class="l">Retries</div><div class="v num g" id="m-retry">—</div></div>
-          <div class="meter"><div class="l">LLM cost</div><div class="v num" id="m-cost">—</div></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============ MODULES ============ -->
-  <section id="modules"><div class="wrap">
-    <div class="shead">
-      <div class="lab">What runs here</div>
-      <h2>Seven modules, each answering a job clients are actually posting</h2>
-      <p>Every module exists because that work keeps appearing in real integration briefs. Each one is runnable in under 30 seconds and shows its own failure modes.</p>
-    </div>
-    <div class="mods">
-      <article class="mod">
-        <div class="hd"><span class="k">01</span><h3><a href="/oauth/">OAuth 2.0 Playground</a></h3></div>
-        <p>Full authorization-code flow with PKCE. Watch the token lifecycle, force an expiry, trigger a revoked consent, see it recover.</p>
-        <div class="ev"><b>Proves:</b> secure third-party auth<br><span class="ph mvp">MVP</span><a class="go" href="/oauth/">Open the playground →</a></div>
-      </article>
-      <article class="mod">
-        <div class="hd"><span class="k">02</span><h3>Five APIs, One Model</h3></div>
-        <p>How five incompatible exchange schemas collapse into a single canonical model — with the rate-limit budget that keeps it inside every venue's ceiling.</p>
-        <div class="ev"><b>Proves:</b> schema normalisation<br><span class="ph mvp">MVP</span></div>
-      </article>
-      <article class="mod">
-        <div class="hd"><span class="k">03</span><h3><a href="/retry/">Retry &amp; Dead Letter</a></h3></div>
-        <p>Set a real endpoint to fail, then watch exponential backoff, jitter, idempotency keys and a dead-letter queue handle it. Real HTTP, measured timings.</p>
-        <div class="ev"><b>Proves:</b> reliability engineering<br><span class="ph mvp">MVP</span><a class="go" href="/retry/">Break something →</a></div>
-      </article>
-      <article class="mod">
-        <div class="hd"><span class="k">04</span><h3>WhatsApp × n8n</h3></div>
-        <p>WhatsApp Cloud API into an n8n workflow with an LLM intent router. Execution traces visible; workflow JSON downloadable.</p>
-        <div class="ev"><b>Proves:</b> messaging automation<br><span class="ph">Phase 2</span></div>
-      </article>
-      <article class="mod">
-        <div class="hd"><span class="k">05</span><h3>AI Action Layer</h3></div>
-        <p>Function calling with JSON Schema validation, confirm-before-write on destructive calls, and per-request cost metering.</p>
-        <div class="ev"><b>Proves:</b> LLM wired to real APIs<br><span class="ph">Phase 2</span></div>
-      </article>
-      <article class="mod">
-        <div class="hd"><span class="k">06</span><h3>Universal CRM Connector</h3></div>
-        <p>HubSpot, Zoho and Airtable behind one canonical contact model. Adding a fourth CRM is one adapter class, not a rebuild.</p>
-        <div class="ev"><b>Proves:</b> connector architecture<br><span class="ph">Phase 3</span></div>
-      </article>
-      <article class="mod">
-        <div class="hd"><span class="k">07</span><h3>Reconciliation Engine</h3></div>
-        <p>Synthetic bank and card feeds, categorised, matched against invoices, with an exception list for everything that didn't match.</p>
-        <div class="ev"><b>Proves:</b> finance-grade data handling<br><span class="ph">Phase 3</span></div>
-      </article>
-    </div>
+  <!-- ===================== WHAT THIS IS ===================== -->
+  <section><div class="wrap">
+    <div class="lab">Integration testing ground</div>
+    <h1 style="margin-top:12px">A bench for the problems two live systems keep running into.</h1>
+    <p class="lede">I run two production systems that look unrelated and turn out to be the same shape of problem: pull from many heterogeneous sources on different cadences, normalise them into one model, score, and alert. This site is where I isolate each part of that and test it on its own, before it goes anywhere near either system.</p>
+    <p class="lede" style="margin-top:12px">Each bench below states what it is trying to find out, the failure it exists because of, and what the testing actually showed. Several of them run live in the browser against real endpoints.</p>
   </div></section>
 
-  <!-- ============ AI LAYER ============ -->
-  <section id="ai"><div class="wrap">
-    <div class="shead">
-      <div class="lab">Module 05 · Interactive</div>
-      <h2>The AI action layer</h2>
-      <p>The risk in wiring an LLM to your API isn't that it fails — it's that it confidently invents a parameter and writes it to your database. This layer treats the model as an untrusted caller: every tool call is schema-validated, every destructive action waits for a human, and anything ambiguous gets asked about rather than guessed.</p>
-    </div>
-
-    <div class="demo">
-      <div class="panel">
-        <div class="lab">Inbound message</div>
-        <div class="presets" role="group" aria-label="Example inbound messages">
-          <button class="preset" type="button" id="p0" data-i="0" aria-pressed="true">“add a $50 lunch expense for yesterday”<span>Happy path — writes after validation</span></button>
-          <button class="preset" type="button" id="p1" data-i="1" aria-pressed="false">“what did we spend on travel last month?”<span>Read-only — runs without a gate</span></button>
-          <button class="preset" type="button" id="p2" data-i="2" aria-pressed="false">“delete all my expenses”<span>Destructive — blocked pending confirmation</span></button>
-          <button class="preset" type="button" id="p3" data-i="3" aria-pressed="false">“can you sort out the thing from tuesday”<span>Ambiguous — refuses to guess</span></button>
-        </div>
-        <div class="note" style="margin-top:16px"><b>Guardrail order:</b> classify → validate against JSON Schema → check write scope → execute or hold. The model never reaches an adapter directly.</div>
-      </div>
-
-      <div class="console">
-        <div class="conhead">
-          <div class="t"><b>llm.route</b> → tool_call → validate → dispatch</div>
-          <div class="live"><i></i>ready</div>
-        </div>
-        <div class="conbody"><pre class="trace" id="ai-out"></pre></div>
-        <div class="meters">
-          <div class="meter"><div class="l">Latency</div><div class="v num" id="ai-lat">—</div></div>
-          <div class="meter"><div class="l">Tokens in/out</div><div class="v num" id="ai-tok">—</div></div>
-          <div class="meter"><div class="l">Cost</div><div class="v num" id="ai-cost">—</div></div>
-        </div>
-      </div>
-    </div>
-  </div></section>
-
-  <!-- ============ AI FIELD MAPPING ============ -->
+  <!-- ===================== THE TWO SYSTEMS ===================== -->
   <section><div class="wrap">
     <div class="shead">
-      <div class="lab">Module 06 · Interactive</div>
-      <h2>AI field mapping, with a confidence floor</h2>
-      <p>Every CRM migration starts with somebody's spreadsheet where the columns are named <code>Ph</code> and <code>status2</code>. The model proposes a mapping to the canonical model; anything under 0.85 confidence is held for a human instead of being silently written.</p>
+      <div class="lab">What feeds the bench</div>
+      <h2>Two production systems, one architecture</h2>
+      <p>Both ingest from sources that disagree about everything — schema, units, identifiers, cadence, availability — and both have to keep producing a usable ranked view when one source misbehaves.</p>
     </div>
-    <div class="demo">
-      <div class="panel">
-        <div class="lab">Source columns detected</div>
-        <pre class="trace" style="color:var(--ink-2); font-size:.78rem; margin-top:12px; white-space:pre-wrap">contacts_export_final_v3.csv
-6 columns · 1,284 rows</pre>
-        <div style="margin-top:16px">
-          <button class="btn p" type="button" id="mapbtn">Propose mapping</button>
-        </div>
-        <div class="note"><b>Why the floor matters:</b> two of six columns here are genuinely ambiguous. Auto-accepting them would corrupt 1,284 records quietly — the expensive kind of bug.</div>
-      </div>
-      <div class="panel">
-        <div class="lab" id="mapstate">Awaiting run</div>
-        <div class="scroller" style="margin-top:12px">
-          <table class="maptbl">
-            <thead><tr><th>Source column</th><th>Canonical field</th><th class="cf">Conf.</th></tr></thead>
-            <tbody id="mapbody">
-              <tr><td class="src">—</td><td class="dst" style="color:var(--ink-3)">press “Propose mapping”</td><td class="cf"></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+
+    <div class="sys">
+      <article class="syscard">
+        <div class="role">System A · crypto derivatives</div>
+        <h3><a href="https://cryptofundingwatch.com/">CryptoFundingWatch</a></h3>
+        <p>Real-time perpetual futures funding rates across five exchanges, surfacing funding-rate spreads and arbitrage opportunities on one clock.</p>
+        <dl class="facts">
+          <dt>sources</dt><dd>Binance · OKX · Hyperliquid · Coinbase INTX · Kraken</dd>
+          <dt>coverage</dt><dd>100+ assets — BTC, ETH, plus Gold, Oil, S&amp;P 500, MAG-7</dd>
+          <dt>cadence</dt><dd>uniform — all venues on the same refresh cycle</dd>
+          <dt>hard part</dt><dd>five funding conventions, five symbol formats, one number</dd>
+        </dl>
+      </article>
+
+      <article class="syscard">
+        <div class="role">System B · market attention</div>
+        <h3><a href="https://latticepulse.app">LatticePulse</a></h3>
+        <p>Detects abnormal attention velocity across social and regulatory sources, scoring each ticker against its own historical baseline with a fixed deterministic formula rather than a model.</p>
+        <dl class="facts">
+          <dt>sources</dt><dd>X · Reddit · SEC Form 4 · SEC 8-K, 13D, 13G</dd>
+          <dt>coverage</dt><dd>1,514+ tickers</dd>
+          <dt>cadence</dt><dd>ragged — minutes for social, 15–30 min for filings</dd>
+          <dt>hard part</dt><dd>four source types that aren't the same kind of thing</dd>
+        </dl>
+      </article>
     </div>
+
+    <div class="note" style="margin-top:18px"><b>Why the pairing is useful.</b> They stress the same pipeline from opposite ends. CryptoFundingWatch is numerically fussy but structurally uniform — five sources, same shape, same clock. LatticePulse is structurally chaotic — a Reddit comment and an SEC Form 4 filing have nothing in common except that both are evidence about a ticker at a point in time. A technique that survives both is probably sound.</div>
   </div></section>
 
-  <!-- ============ ARCHITECTURE ============ -->
-  <section id="architecture"><div class="wrap">
+  <!-- ===================== THE SHARED PIPELINE ===================== -->
+  <section><div class="wrap">
     <div class="shead">
-      <div class="lab">Overall architecture</div>
-      <h2>One path in, one path out, and somewhere to put the failures</h2>
-      <p>Everything on this site runs through the same spine. The interesting parts are the two that most integrations skip: the gate at the front that makes replays harmless, and the queue at the bottom that catches what couldn't be delivered.</p>
+      <div class="lab">The shape of the problem</div>
+      <h2>Both systems reduce to the same five stages</h2>
+      <p>The benches map onto the stages. Where each one sits is where its failures show up.</p>
     </div>
     <div class="diagram">
-      <svg viewBox="0 0 980 340" role="img" aria-label="Architecture: inbound events pass through a gateway, router, AI action layer and adapters to systems of record, with a retry and dead-letter path and an observability tap.">
-        <text class="dttl" x="8" y="20">Inbound</text>
-        <text class="dttl" x="196" y="20">Gate</text>
-        <text class="dttl" x="392" y="20">Route</text>
-        <text class="dttl" x="576" y="20">Decide</text>
-        <text class="dttl" x="784" y="20">Deliver</text>
+      <svg viewBox="0 0 960 300" role="img" aria-label="Pipeline diagram: heterogeneous sources feed adapters, which produce a canonical model, which feeds scoring and then alerting. Integration concerns attach to specific stages.">
+        <text class="dttl" x="8" y="18">SOURCES</text>
+        <text class="dttl" x="216" y="18">ADAPT</text>
+        <text class="dttl" x="424" y="18">CANONICAL</text>
+        <text class="dttl" x="632" y="18">SCORE</text>
+        <text class="dttl" x="828" y="18">ACT</text>
 
-        <rect class="dbox" x="8" y="34" width="156" height="92" rx="7"/>
-        <text class="dlab" x="24" y="58">Events</text>
-        <text class="dsub" x="24" y="78">WhatsApp Cloud API</text>
-        <text class="dsub" x="24" y="94">Stripe webhooks</text>
-        <text class="dsub" x="24" y="110">Forms · schedules</text>
+        <rect class="dbox" x="8" y="30" width="176" height="104" rx="7"/>
+        <text class="dlab" x="24" y="54">Heterogeneous</text>
+        <text class="dsub" x="24" y="74">5 exchange APIs</text>
+        <text class="dsub" x="24" y="90">2 social firehoses</text>
+        <text class="dsub" x="24" y="106">2 SEC filing feeds</text>
+        <text class="dsub" x="24" y="122">every one different</text>
 
-        <rect class="dbox" x="196" y="34" width="160" height="92" rx="7"/>
-        <text class="dlab" x="212" y="58">Gateway</text>
-        <text class="dsub" x="212" y="78">HMAC verify</text>
-        <text class="dsub" x="212" y="94">idempotency key</text>
-        <text class="dsub" x="212" y="110">rate limit · 202 ack</text>
+        <rect class="dbox-a" x="216" y="30" width="176" height="104" rx="7"/>
+        <text class="dlab" x="232" y="54">One adapter each</text>
+        <text class="dsub" x="232" y="74">units normalised here</text>
+        <text class="dsub" x="232" y="90">symbols mapped here</text>
+        <text class="dsub" x="232" y="106">validated on arrival</text>
+        <text class="dsub" x="232" y="122">provenance attached</text>
 
-        <rect class="dbox" x="392" y="34" width="150" height="92" rx="7"/>
-        <text class="dlab" x="408" y="58">Router</text>
-        <text class="dsub" x="408" y="78">n8n workflows</text>
-        <text class="dsub" x="408" y="94">FastAPI handlers</text>
-        <text class="dsub" x="408" y="110">queue-backed</text>
+        <rect class="dbox-a" x="424" y="30" width="176" height="104" rx="7"/>
+        <text class="dlab" x="440" y="54">Canonical model</text>
+        <text class="dsub" x="440" y="74">one shape, one clock</text>
+        <text class="dsub" x="440" y="90">one identifier space</text>
+        <text class="dsub" x="440" y="106">stale flags, not gaps</text>
+        <text class="dsub" x="440" y="122">source-agnostic</text>
 
-        <rect class="dbox-a" x="576" y="34" width="166" height="92" rx="7"/>
-        <text class="dlab" x="592" y="58">AI action layer</text>
-        <text class="dsub" x="592" y="78">intent + tool call</text>
-        <text class="dsub" x="592" y="94">schema validation</text>
-        <text class="dsub" x="592" y="110">write-scope guard</text>
+        <rect class="dbox" x="632" y="30" width="164" height="104" rx="7"/>
+        <text class="dlab" x="648" y="54">Deterministic</text>
+        <text class="dsub" x="648" y="74">spread &amp; annualised edge</text>
+        <text class="dsub" x="648" y="90">velocity vs own baseline</text>
+        <text class="dsub" x="648" y="106">fixed formula</text>
+        <text class="dsub" x="648" y="122">reproducible</text>
 
-        <rect class="dbox" x="784" y="34" width="188" height="92" rx="7"/>
-        <text class="dlab" x="800" y="58">Adapters</text>
-        <text class="dsub" x="800" y="78">HubSpot · Zoho · Airtable</text>
-        <text class="dsub" x="800" y="94">Sheets · Stripe</text>
-        <text class="dsub" x="800" y="110">one canonical model</text>
+        <rect class="dbox" x="828" y="30" width="124" height="104" rx="7"/>
+        <text class="dlab" x="844" y="54">Rank · alert</text>
+        <text class="dsub" x="844" y="74">thresholds</text>
+        <text class="dsub" x="844" y="90">dedupe</text>
+        <text class="dsub" x="844" y="106">delivery</text>
+        <text class="dsub" x="844" y="122">retry</text>
 
-        <path class="dline" d="M164 80 L196 80"/><path class="dline" d="M188 76 l8 4 -8 4"/>
-        <path class="dline" d="M356 80 L392 80"/><path class="dline" d="M384 76 l8 4 -8 4"/>
-        <path class="dline-a" d="M542 80 L576 80"/><path class="dline-a" d="M568 76 l8 4 -8 4"/>
-        <path class="dline-a" d="M742 80 L784 80"/><path class="dline-a" d="M776 76 l8 4 -8 4"/>
+        <path class="dline-a" d="M184 82 L216 82"/><path class="dline-a" d="M208 78 l8 4 -8 4"/>
+        <path class="dline-a" d="M392 82 L424 82"/><path class="dline-a" d="M416 78 l8 4 -8 4"/>
+        <path class="dline" d="M600 82 L632 82"/><path class="dline" d="M624 78 l8 4 -8 4"/>
+        <path class="dline" d="M796 82 L828 82"/><path class="dline" d="M820 78 l8 4 -8 4"/>
 
-        <text class="dttl" x="392" y="184">On failure</text>
-        <rect class="dbox" x="392" y="198" width="150" height="76" rx="7"/>
-        <text class="dlab" x="408" y="222">Retry</text>
-        <text class="dsub" x="408" y="242">1s · 2s · 4s · 8s</text>
-        <text class="dsub" x="408" y="258">jittered backoff</text>
+        <text class="dttl" x="8" y="190">WHERE THE BENCHES SIT</text>
+        <line class="dgrid" x1="8" y1="200" x2="952" y2="200"/>
 
-        <rect class="dbox" x="576" y="198" width="166" height="76" rx="7"/>
-        <text class="dlab" x="592" y="222">Dead-letter queue</text>
-        <text class="dsub" x="592" y="242">inspect · fix · replay</text>
-        <text class="dsub" x="592" y="258">nothing silently lost</text>
+        <text class="dsub" x="8"   y="226">01 auth · 03 retry</text>
+        <text class="dsub" x="8"   y="242">rate limits</text>
+        <text class="dsub" x="216" y="226">02 schema normalisation</text>
+        <text class="dsub" x="216" y="242">06 connector architecture</text>
+        <text class="dsub" x="424" y="226">07 reconciliation</text>
+        <text class="dsub" x="424" y="242">drift detection</text>
+        <text class="dsub" x="632" y="226">05 AI action layer</text>
+        <text class="dsub" x="632" y="242">schema-validated calls</text>
+        <text class="dsub" x="828" y="226">04 messaging</text>
+        <text class="dsub" x="828" y="242">03 delivery retry</text>
 
-        <path class="dline-d" d="M467 126 L467 198"/><path class="dline-d" d="M463 190 l4 8 4 -8"/>
-        <path class="dline-d" d="M542 236 L576 236"/><path class="dline-d" d="M568 232 l8 4 -8 4"/>
-        <path class="dline-d" d="M392 236 L340 236 L340 80 L356 80"/>
-
-        <rect class="dbox" x="8" y="198" width="156" height="76" rx="7"/>
-        <text class="dlab" x="24" y="222">Observability</text>
-        <text class="dsub" x="24" y="242">traces · error rate</text>
-        <text class="dsub" x="24" y="258">rate-limit headroom</text>
-        <path class="dline-d" d="M86 198 L86 80 L196 80"/>
-
-        <text class="dsub" x="784" y="222">Every step emits a span.</text>
-        <text class="dsub" x="784" y="240">A replayed webhook hits the</text>
-        <text class="dsub" x="784" y="258">same idempotency key and</text>
-        <text class="dsub" x="784" y="276">becomes a no-op.</text>
+        <path class="dline-d" d="M60 200 L60 134"/>
+        <path class="dline-d" d="M280 200 L280 134"/>
+        <path class="dline-d" d="M480 200 L480 134"/>
+        <path class="dline-d" d="M690 200 L690 134"/>
+        <path class="dline-d" d="M870 200 L870 134"/>
       </svg>
     </div>
   </div></section>
 
-  <!-- ============ PATTERNS ============ -->
-  <section id="patterns"><div class="wrap">
-    <div class="shead">
-      <div class="lab">Where these patterns come from</div>
-      <h2>None of this is invented here</h2>
-      <p>Every mechanism in the lab is a documented practice from a system that runs it at scale. Knowing which pattern a problem calls for — and being able to name where it's proven — is most of the job.</p>
-    </div>
-    <div class="pats">
-      <div class="pat">
-        <div class="who">Stripe</div>
-        <h4>Idempotency keys</h4>
-        <p>A client-supplied key makes a retried request a no-op instead of a duplicate charge. Network timeouts stop being dangerous.</p>
-        <div class="impl">→ Gateway, every inbound event</div>
-      </div>
-      <div class="pat">
-        <div class="who">Stripe · Twilio</div>
-        <h4>Signed webhooks, retried on a curve</h4>
-        <p>HMAC-signed payloads with a timestamp window defeat replay attacks; failed deliveries retry on exponential backoff over hours, not once.</p>
-        <div class="impl">→ HMAC verify · 1s/2s/4s/8s jittered</div>
-      </div>
-      <div class="pat">
-        <div class="who">Shopify</div>
-        <h4>Leaky-bucket rate limiting</h4>
-        <p>Cost-based throttling means you budget calls against a refilling bucket rather than discovering the ceiling with a 429 in production.</p>
-        <div class="impl">→ Rate-limit headroom on the status board</div>
-      </div>
-      <div class="pat">
-        <div class="who">Slack Events API</div>
-        <h4>Acknowledge fast, work async</h4>
-        <p>Return 202 within the delivery window, then process on a queue. Slow downstream work stops causing upstream retries.</p>
-        <div class="impl">→ 202 ack at the gate, queue-backed router</div>
-      </div>
-      <div class="pat">
-        <div class="who">OAuth 2.0 · RFC 7636</div>
-        <h4>PKCE and refresh rotation</h4>
-        <p>Proof Key for Code Exchange removes the intercepted-code attack; rotating refresh tokens limit the blast radius of a leaked one.</p>
-        <div class="impl">→ Module 01, end to end</div>
-      </div>
-      <div class="pat">
-        <div class="who">Segment · Airbyte</div>
-        <h4>Canonical model with adapters</h4>
-        <p>Sources and destinations both translate to one internal schema, so N systems need N adapters rather than N² point-to-point integrations.</p>
-        <div class="impl">→ Module 06, three CRMs one model</div>
-      </div>
-      <div class="pat">
-        <div class="who">AWS SQS</div>
-        <h4>Dead-letter queues</h4>
-        <p>After the retry budget is spent the message lands somewhere inspectable and replayable, instead of vanishing into a log nobody reads.</p>
-        <div class="impl">→ Module 03, with one-click replay</div>
-      </div>
-      <div class="pat">
-        <div class="who">Double-entry bookkeeping</div>
-        <h4>Reconcile, don't trust</h4>
-        <p>Two independent records of the same event get compared, and the exceptions are the output. Assume delivery failed until both sides agree.</p>
-        <div class="impl">→ Module 07, exception list first</div>
-      </div>
-    </div>
-  </div></section>
-
-  <!-- ============ SCENARIOS ============ -->
+  <!-- ===================== THE BENCHES ===================== -->
   <section><div class="wrap">
     <div class="shead">
-      <div class="lab">What this looks like in practice</div>
-      <h2>Three shapes these problems usually arrive in</h2>
-      <p>Composite scenarios drawn from common integration briefs — illustrations of the failure mode and the fix, not descriptions of past clients.</p>
+      <div class="lab">The benches</div>
+      <h2>Seven questions, each tested on its own</h2>
+      <p>Isolated deliberately. A technique that only works inside a running system hasn't been tested — it's been observed.</p>
     </div>
-    <div class="scens">
-      <div class="scen">
-        <span class="tag">Illustrative</span>
-        <h4>Orders in one system, books in another</h4>
-        <div class="ba">
-          <div><span class="k">Before</span><span class="b">A 40-person retailer re-keys ~200 orders a week from a fulfilment portal into accounting. Month-end takes three days because nobody trusts either total.</span></div>
-          <div><span class="k">After</span><span class="a">Canonical order model, adapters both ends, nightly reconciliation that outputs only the mismatches. Month-end becomes reviewing an exception list.</span></div>
-        </div>
-        <div class="ev lab" style="color:var(--ink-3)">Modules 06 · 07</div>
-      </div>
-      <div class="scen">
-        <span class="tag">Illustrative</span>
-        <h4>The automation that quietly stopped</h4>
-        <div class="ba">
-          <div><span class="k">Before</span><span class="b">A lead-routing workflow has been failing for eleven days. Nobody noticed, because a failed run looks exactly like a quiet week.</span></div>
-          <div><span class="k">After</span><span class="a">Every run emits a span; absence of expected traffic raises an alert. Failures land in a dead-letter queue and replay once the upstream is fixed.</span></div>
-        </div>
-        <div class="ev lab" style="color:var(--ink-3)">Modules 03 · 04</div>
-      </div>
-      <div class="scen">
-        <span class="tag">Illustrative</span>
-        <h4>Customers messaging a number nobody watches</h4>
-        <div class="ba">
-          <div><span class="k">Before</span><span class="b">Enquiries arrive on WhatsApp at all hours. Replies take a day; the details get retyped into a CRM later, sometimes.</span></div>
-          <div><span class="k">After</span><span class="a">Intent routing answers the routine ones instantly and opens a properly-typed CRM record for the rest. Anything ambiguous escalates rather than guessing.</span></div>
-        </div>
-        <div class="ev lab" style="color:var(--ink-3)">Modules 04 · 05 · 06</div>
-      </div>
-    </div>
-  </div></section>
-
-  <!-- ============ PRODUCTION ============ -->
-  <section id="production"><div class="wrap">
-    <div class="shead">
-      <div class="lab">The one that isn't a demo</div>
-      <h2>CryptoFundingWatch — in production, continuously</h2>
-    </div>
-    <div class="case">
-      <div class="prose">
-        <p>Everything above this line is a lab: purpose-built to be inspected. This one is a real system I built and still run, and it is where the patterns were actually paid for.</p>
-        <p>It reads perpetual funding rates from <strong>five exchanges</strong> — Binance, OKX, Hyperliquid, Coinbase and Kraken — and presents them as one ranked view. That sentence hides the entire problem: five venues means five different authentication schemes, five pagination styles, five ways of expressing an interval, and five independent opinions about what a funding rate even is. One returns eight-hour rates; another returns an hourly rate that must be annualised before the two can sit in the same column.</p>
-        <p>The normalisation layer is the product. Every venue gets an adapter that translates into one canonical instrument model, so the scoring engine never learns that Kraken exists. <strong>Adding a sixth exchange is one adapter, not a refactor</strong> — the same shape as the CRM connector in Module 06.</p>
-        <p>Refreshing 142 instruments every 60 seconds means the request budget is the real constraint. Calls are batched and staggered against each venue's published limit with deliberate headroom, because the failure mode of getting this wrong isn't slowness — it's a rate-limit ban.</p>
-        <p>And venues go down. When one does, the dashboard doesn't blank: that venue's rows go stale-flagged with their last-good timestamp while the other four keep updating. <strong>Partial availability beats a spinner</strong>, every time. Undocumented schema changes ship without warning, so responses are validated on arrival and a shape change raises an alert before a user finds it.</p>
-      </div>
-      <div>
-        <div class="facts">
-          <div class="fact"><div class="v">5</div><div class="l">exchange APIs, one model</div></div>
-          <div class="fact"><div class="v">142</div><div class="l">instruments tracked</div></div>
-          <div class="fact"><div class="v">60s</div><div class="l">full refresh cycle</div></div>
-          <div class="fact"><div class="v">4/5</div><div class="l">venues still useful when one fails</div></div>
-        </div>
-        <div class="console" style="margin-top:16px">
-          <div class="conhead"><div class="t"><b>health</b> · venue status</div><div class="live"><i></i>live</div></div>
-          <div class="health">
-            <div class="hcell"><div class="n">binance</div><div class="s"><i></i>ok · 41ms</div></div>
-            <div class="hcell"><div class="n">okx</div><div class="s"><i></i>ok · 88ms</div></div>
-            <div class="hcell retry"><div class="n">hyperliquid</div><div class="s"><i></i>retry 2/4</div></div>
-            <div class="hcell"><div class="n">coinbase</div><div class="s"><i></i>ok · 62ms</div></div>
-            <div class="hcell"><div class="n">kraken</div><div class="s"><i></i>ok · 73ms</div></div>
-            <div class="hcell"><div class="n">dlq depth</div><div class="s"><i></i>0</div></div>
-          </div>
-        </div>
-      </div>
+    <div class="scroller">
+      <table class="benches">
+        <thead><tr><th></th><th>Bench</th><th>Testing aim</th><th>Feeds</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="n">01</td>
+            <td class="name"><a href="/oauth/">Auth &amp; token lifecycle</a></td>
+            <td class="aim">Can a long-running poller hold third-party credentials for months without a mid-request expiry or a manual reconnect?</td>
+            <td class="feeds">both</td>
+            <td><span class="st part">bench up</span></td>
+          </tr>
+          <tr>
+            <td class="n">02</td>
+            <td class="name"><a href="/schemas/">Schema normalisation</a></td>
+            <td class="aim">Can N source schemas collapse into one canonical model so that adding source N+1 touches one file and nothing downstream?</td>
+            <td class="feeds">both</td>
+            <td><span class="st live">live</span></td>
+          </tr>
+          <tr>
+            <td class="n">03</td>
+            <td class="name"><a href="/retry/">Retry &amp; dead letter</a></td>
+            <td class="aim">When a source goes down mid-cycle, does the pipeline degrade, recover, and avoid double-applying anything?</td>
+            <td class="feeds">both</td>
+            <td><span class="st live">live</span></td>
+          </tr>
+          <tr>
+            <td class="n">04</td>
+            <td class="name">Alert delivery</td>
+            <td class="aim">Does an alert survive the last mile — dedupe, ordering, and a messaging provider that rate-limits or silently drops?</td>
+            <td class="feeds">LatticePulse</td>
+            <td><span class="st draft">draft</span></td>
+          </tr>
+          <tr>
+            <td class="n">05</td>
+            <td class="name">LLM action layer</td>
+            <td class="aim">Can a model be given API access without ever inventing a parameter or writing something irreversible unprompted?</td>
+            <td class="feeds">both</td>
+            <td><span class="st draft">draft</span></td>
+          </tr>
+          <tr>
+            <td class="n">06</td>
+            <td class="name">Connector architecture</td>
+            <td class="aim">At what point does point-to-point integration stop scaling, and what does the hub cost to introduce?</td>
+            <td class="feeds">both</td>
+            <td><span class="st draft">draft</span></td>
+          </tr>
+          <tr>
+            <td class="n">07</td>
+            <td class="name">Reconciliation &amp; drift</td>
+            <td class="aim">How fast can an undocumented upstream schema change be detected — before or after it corrupts the scored output?</td>
+            <td class="feeds">both</td>
+            <td><span class="st draft">draft</span></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div></section>
 
-  <!-- ============ CTA ============ -->
+  <!-- ===================== NOTES ===================== -->
   <section><div class="wrap">
-    <div class="final">
-      <div class="lab">Start here</div>
-      <h2>Tell me what keeps breaking</h2>
-      <p>If something in your stack fails quietly, or someone on your team is copying data between two tools every week, send me the details. I'll tell you whether it's a two-hour fix or a real project before you spend anything.</p>
-      <div class="cta" style="margin-top:0">
-        <a class="btn p" href="#top">Get in touch</a>
-        <a class="btn s" href="#architecture">Read the architecture</a>
-      </div>
+    <div class="shead">
+      <div class="lab">Findings so far</div>
+      <h2>Notes</h2>
     </div>
+    <ul class="notes">
+      <li><b>Partial availability beats a spinner.</b> When one of five exchanges stops responding, blanking the whole view is worse than showing four live rows and one stale-flagged with its last-good timestamp. Users can reason about a known-stale number; they can't reason about an absence.</li>
+      <li><b>Normalise at the boundary or not at all.</b> Every unit conversion that leaks past the adapter — an hourly rate that reaches the scorer un-annualised — becomes a bug that only shows up on the one venue that does it differently.</li>
+      <li><b>Ragged cadence is harder than slow cadence.</b> LatticePulse polls social every few minutes and filings every 15–30. Comparing velocity across sources that sample at different rates needs the baseline to be per-source, not global.</li>
+      <li><b>A timeout is not a failure.</b> The retry bench exists because of this one — after a timeout you don't know whether the write landed, and the only safe answer is an idempotency key. <a href="/retry/">Bench 03</a> demonstrates it.</li>
+      <li><b>Deterministic scoring is a feature.</b> Both systems use fixed formulas rather than models. It means a score can be explained, reproduced, and argued with — which matters more than accuracy when someone asks why a ticker moved up the list.</li>
+    </ul>
   </div></section>
 
   <footer><div class="wrap">
-    <p><b>Prototype.</b> This page is a design prototype of the Integration Lab homepage. The traces, meters and demos on it are simulated in-browser to show the intended behaviour — in the built version each one calls a live backend. CryptoFundingWatch is a real production system; the lab modules are purpose-built demonstrations, not delivered client work.</p>
-    <p style="margin-top:10px">Ivan Tsang · Hong Kong UTC+8 · Integration &amp; automation engineering</p>
+    <p><b>What this is.</b> A personal testing ground, not a product and not a portfolio. The benches exist to answer specific questions about integration behaviour; several run live in the browser against real endpoints, and where a demo is simulated the page says so. Findings here inform <a href="https://cryptofundingwatch.com/">CryptoFundingWatch</a> and <a href="https://latticepulse.app">LatticePulse</a>, which are the systems that keep raising the questions.</p>
+    <p style="margin-top:10px">Ivan Tsang · Hong Kong UTC+8 · <a href="https://github.com/ivantsangwork/integration-lab">source</a></p>
   </div></footer>
 
 </main>
-
-<script>
-(function(){
-  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  /* ---------- hero trace ---------- */
-  var heroRows = [
-    ['<span class="m">→</span> POST /hooks/whatsapp/inbound            <span class="ok">202</span>   <span class="m">12ms</span>', 0],
-    ['  <span class="m">├</span> verify signature  <span class="m">hmac-sha256</span>       <span class="ok">ok</span>    <span class="m">1ms</span>', 1],
-    ['  <span class="m">├</span> idempotency  <span class="m">key=wamid.HBgM…7f2</span>      <span class="ok">new</span>   <span class="m">2ms</span>', 2],
-    ['  <span class="m">├</span> oauth  <span class="m">sheets · token age 41m</span>         <span class="ok">ok</span>    <span class="m">0ms</span>', 3],
-    ['  <span class="m">├</span> <span class="ac">llm.route</span>  <span class="m">→ log_expense (0.96)</span>     <span class="ok">ok</span>  <span class="m">480ms</span>', 4],
-    ['  <span class="m">├</span> schema.validate  <span class="m">expense.v2</span>          <span class="ok">pass</span>  <span class="m">2ms</span>', 5],
-    ['  <span class="m">├</span> sheets.append  <span class="m">row 1,041</span>             <span class="ok">ok</span>  <span class="m">210ms</span>', 6],
-    ['  <span class="m">└</span> wa.reply  <span class="m">“Logged $50 · Lunch · Tue”</span>   <span class="ok">ok</span>  <span class="m">180ms</span>', 7]
-  ];
-  var el = document.getElementById('trace');
-  function paint(i){
-    var r = heroRows[i];
-    var s = document.createElement('span');
-    s.className = 'row'; s.innerHTML = r[0] + '\n';
-    el.appendChild(s);
-  }
-  function finishHero(){
-    document.getElementById('m-total').textContent = '885ms';
-    document.getElementById('m-retry').textContent = '0';
-    document.getElementById('m-cost').textContent  = '$0.0012';
-  }
-  if(reduce){ heroRows.forEach(function(_,i){ paint(i); }); finishHero(); }
-  else {
-    heroRows.forEach(function(_,i){ setTimeout(function(){ paint(i); }, 220 + i*190); });
-    setTimeout(finishHero, 220 + heroRows.length*190);
-  }
-
-  /* ---------- AI action layer ---------- */
-  var cases = [
-    {
-      lat:'0.71s', tok:'312 / 48', cost:'$0.0014', costCls:'',
-      out:
-'<span class="m">user</span>  “add a $50 lunch expense for yesterday”\n\n'+
-'<span class="ac">llm.route</span>  intent=<span class="ok">log_expense</span>  confidence=<span class="ok">0.96</span>\n\n'+
-'<span class="m">tool_call</span>\n'+
-'{\n'+
-'  "name": "log_expense",\n'+
-'  "arguments": {\n'+
-'    "amount":   50.00,\n'+
-'    "currency": "USD",\n'+
-'    "category": "meals",\n'+
-'    "date":     "2026-09-16",\n'+
-'    "note":     "Lunch"\n'+
-'  }\n'+
-'}\n\n'+
-'<span class="m">schema.validate</span>  expense.v2 ......... <span class="ok">pass</span>\n'+
-'  amount     number, &gt;0 ............. <span class="ok">ok</span>\n'+
-'  date       ISO-8601, not future ... <span class="ok">ok</span>\n'+
-'  category   enum(8) ................ <span class="ok">ok</span>\n\n'+
-'<span class="m">write.scope</span>   append-only ....... <span class="ok">allowed</span>\n'+
-'<span class="m">dispatch</span>      sheets.append ..... <span class="ok">row 1,041</span>\n\n'+
-'<span class="ok">✓ committed</span>  <span class="m">reply sent</span>'
-    },
-    {
-      lat:'0.64s', tok:'298 / 41', cost:'$0.0011', costCls:'',
-      out:
-'<span class="m">user</span>  “what did we spend on travel last month?”\n\n'+
-'<span class="ac">llm.route</span>  intent=<span class="ok">query_expenses</span>  confidence=<span class="ok">0.94</span>\n\n'+
-'<span class="m">tool_call</span>\n'+
-'{\n'+
-'  "name": "query_expenses",\n'+
-'  "arguments": {\n'+
-'    "category":  "travel",\n'+
-'    "date_from": "2026-08-01",\n'+
-'    "date_to":   "2026-08-31",\n'+
-'    "aggregate": "sum"\n'+
-'  }\n'+
-'}\n\n'+
-'<span class="m">schema.validate</span>  query.v1 ........... <span class="ok">pass</span>\n'+
-'<span class="m">write.scope</span>   <span class="ok">read-only</span> — no gate required\n'+
-'<span class="m">dispatch</span>      sheets.query ...... <span class="ok">27 rows</span>\n\n'+
-'<span class="ok">✓ answered</span>  <span class="m">“Travel, August: $4,182.60 across 27 items.”</span>'
-    },
-    {
-      lat:'0.58s', tok:'286 / 39', cost:'$0.0010', costCls:'w',
-      out:
-'<span class="m">user</span>  “delete all my expenses”\n\n'+
-'<span class="ac">llm.route</span>  intent=<span class="wn">delete_expenses</span>  confidence=<span class="ok">0.91</span>\n\n'+
-'<span class="m">tool_call</span>\n'+
-'{\n'+
-'  "name": "delete_expenses",\n'+
-'  "arguments": { "scope": "all", "confirm": false }\n'+
-'}\n\n'+
-'<span class="m">schema.validate</span>  delete.v1 .......... <span class="ok">pass</span>\n'+
-'<span class="m">write.scope</span>   destructive ....... <span class="cr">BLOCKED</span>\n\n'+
-'<span class="wn">⚠ held for confirmation</span>\n'+
-'  affects <span class="wn">1,041 rows</span> · irreversible\n'+
-'  requires human approval token\n'+
-'  <span class="m">nothing was written</span>\n\n'+
-'<span class="m">reply</span>  “That would delete 1,041 records and can’t be\n'+
-'       undone. Reply CONFIRM DELETE ALL to proceed.”'
-    },
-    {
-      lat:'0.49s', tok:'271 / 33', cost:'$0.0009', costCls:'',
-      out:
-'<span class="m">user</span>  “can you sort out the thing from tuesday”\n\n'+
-'<span class="ac">llm.route</span>  intent=<span class="wn">unresolved</span>  confidence=<span class="cr">0.38</span>\n'+
-'  candidates:\n'+
-'    log_expense .......... 0.38\n'+
-'    query_expenses ....... 0.31\n'+
-'    update_expense ....... 0.24\n\n'+
-'<span class="m">threshold</span>  0.85 ................ <span class="cr">not met</span>\n'+
-'<span class="m">tool_call</span>   <span class="cr">none emitted</span>\n\n'+
-'<span class="cr">✗ no action taken</span>\n'+
-'  <span class="m">The model is not permitted to pick the most\n'+
-'  likely tool when nothing clears the floor.</span>\n\n'+
-'<span class="m">reply</span>  “Happy to help — do you want me to log a new\n'+
-'       expense for Tuesday, or look one up?”'
-    }
-  ];
-  var aiOut = document.getElementById('ai-out'),
-      btns  = Array.prototype.slice.call(document.querySelectorAll('.preset'));
-  function runCase(i){
-    var c = cases[i];
-    btns.forEach(function(b){ b.setAttribute('aria-pressed', String(+b.dataset.i === i)); });
-    aiOut.innerHTML = c.out;
-    document.getElementById('ai-lat').textContent  = c.lat;
-    document.getElementById('ai-tok').textContent  = c.tok;
-    var cost = document.getElementById('ai-cost');
-    cost.textContent = c.cost;
-    cost.className = 'v num ' + (c.costCls || '');
-  }
-  btns.forEach(function(b){ b.addEventListener('click', function(){ runCase(+b.dataset.i); }); });
-  runCase(0);
-
-  /* ---------- field mapping ---------- */
-  var rows = [
-    ['Cust Name',  'contact.full_name',  '0.97', false],
-    ['e-mail addr','contact.email',      '0.99', false],
-    ['Ph',         'contact.phone',      '0.94', false],
-    ['Company',    'account.name',       '0.96', false],
-    ['acct_mgr',   'owner.name',         '0.71', true ],
-    ['status2',    '— no confident match','0.31', true ]
-  ];
-  document.getElementById('mapbtn').addEventListener('click', function(){
-    var tb = document.getElementById('mapbody');
-    tb.innerHTML = '';
-    rows.forEach(function(r){
-      var tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td class="src">' + r[0] + '</td>' +
-        '<td class="dst' + (r[3] ? ' flag' : '') + '">' + r[1] + (r[3] ? ' <span class="flag">⚑</span>' : '') + '</td>' +
-        '<td class="cf' + (r[3] ? ' flag' : '') + '">' + r[2] + '</td>';
-      tb.appendChild(tr);
-    });
-    document.getElementById('mapstate').innerHTML =
-      '4 auto-accepted · <span style="color:var(--warn)">2 held for review</span>';
-  });
-})();
-</script>
+</body>
+</html>
