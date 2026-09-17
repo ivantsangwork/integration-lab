@@ -14,8 +14,9 @@ import {
   clearCookie, cookie, readCookie, sign, timingSafeEqual, unsign,
 } from "./_shared";
 
+/** Send failures back to the playground UI, which renders them in the trace. */
 function fail(origin: string, reason: string, detail?: string): Response {
-  const url = new URL(`${origin}/`);
+  const url = new URL(`${origin}/oauth/`);
   url.hash = `oauth-error:${reason}${detail ? `:${encodeURIComponent(detail)}` : ""}`;
   return new Response(null, {
     status: 302,
@@ -74,7 +75,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     exp: Date.now() + 60 * 60 * 1000, // the session itself dies in an hour regardless
   };
 
-  const headers = new Headers({ Location: `${origin}/#oauth-connected`, "Cache-Control": "no-store" });
+  const headers = new Headers({ Location: `${origin}/oauth/#oauth-connected`, "Cache-Control": "no-store" });
   headers.append("Set-Cookie", clearCookie(PKCE_COOKIE));
   headers.append("Set-Cookie", cookie(SESSION_COOKIE, await sign(session, env.SESSION_SECRET), 3600));
 

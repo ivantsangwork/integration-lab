@@ -135,6 +135,9 @@
   .mod .ev{margin-top:auto; padding-top:11px; font-size:.76rem; color:var(--ink-3);
     border-top:1px dashed var(--rule-2); font-family:var(--mono); line-height:1.5}
   .mod .ev b{color:var(--ink-2); font-weight:500}
+  .mod h3 a{color:inherit; text-decoration:none}
+  .mod h3 a:hover{color:var(--accent)}
+  .mod .go{font-family:var(--sans); font-size:.78rem; margin-left:8px; white-space:nowrap}
   .ph{display:inline-block; font-family:var(--mono); font-size:.63rem; letter-spacing:.07em;
     text-transform:uppercase; padding:2px 6px; border-radius:3px; border:1px solid var(--rule-2); color:var(--ink-3)}
   .ph.mvp{color:var(--ok); border-color:currentColor}
@@ -263,8 +266,8 @@
         <h1 style="margin-top:14px">Integrations that keep talking at <em>3am</em>.</h1>
         <p class="lede">A working lab of the things that actually break in production — OAuth token refresh, webhook retries, rate limits, reconciliation. Press a button and watch the failure path, not just the happy path.</p>
         <div class="cta">
-          <a class="btn p" href="#ai">Run the AI action layer</a>
-          <a class="btn s" href="#production">See the production system</a>
+          <a class="btn p" href="/oauth/">Run the OAuth playground</a>
+          <a class="btn s" href="#ai">See the AI action layer</a>
         </div>
         <div class="creds">
           <div class="cred"><b class="num">10 yrs</b>corporate eBanking delivery</div>
@@ -299,9 +302,9 @@
     </div>
     <div class="mods">
       <article class="mod">
-        <div class="hd"><span class="k">01</span><h3>OAuth 2.0 Playground</h3></div>
+        <div class="hd"><span class="k">01</span><h3><a href="/oauth/">OAuth 2.0 Playground</a></h3></div>
         <p>Full authorization-code flow with PKCE. Watch the token lifecycle, force an expiry, trigger a revoked consent, see it recover.</p>
-        <div class="ev"><b>Proves:</b> secure third-party auth<br><span class="ph mvp">MVP</span></div>
+        <div class="ev"><b>Proves:</b> secure third-party auth<br><span class="ph mvp">MVP</span><a class="go" href="/oauth/">Open the playground →</a></div>
       </article>
       <article class="mod">
         <div class="hd"><span class="k">02</span><h3>Five APIs, One Model</h3></div>
@@ -309,9 +312,9 @@
         <div class="ev"><b>Proves:</b> schema normalisation<br><span class="ph mvp">MVP</span></div>
       </article>
       <article class="mod">
-        <div class="hd"><span class="k">03</span><h3>Health &amp; Retry</h3></div>
-        <p>A status board for every demo integration — plus a button that deliberately breaks one so you can watch backoff and the dead-letter queue work.</p>
-        <div class="ev"><b>Proves:</b> reliability engineering<br><span class="ph mvp">MVP</span></div>
+        <div class="hd"><span class="k">03</span><h3><a href="/retry/">Retry &amp; Dead Letter</a></h3></div>
+        <p>Set a real endpoint to fail, then watch exponential backoff, jitter, idempotency keys and a dead-letter queue handle it. Real HTTP, measured timings.</p>
+        <div class="ev"><b>Proves:</b> reliability engineering<br><span class="ph mvp">MVP</span><a class="go" href="/retry/">Break something →</a></div>
       </article>
       <article class="mod">
         <div class="hd"><span class="k">04</span><h3>WhatsApp × n8n</h3></div>

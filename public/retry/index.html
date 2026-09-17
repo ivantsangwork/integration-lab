@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Retry &amp; Dead Letter Lab — Integration Lab</title>
+<meta name="description" content="Break a real endpoint and watch exponential backoff, jitter, idempotency keys and a dead-letter queue handle it. Real HTTP, real timings.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<link rel="stylesheet" href="/assets/lab.css">
+<style>
+  /* ---- page-specific: the pipeline visual ---- */
+  .rig{display:grid; grid-template-columns:minmax(0,300px) minmax(0,1fr); gap:18px; align-items:start}
+  @media (max-width:940px){ .rig{grid-template-columns:1fr} }
+
+  .modes{display:grid; grid-template-columns:repeat(2,1fr); gap:8px}
+  .mode{padding:9px 10px; border-radius:6px; border:1px solid var(--rule-2);
+    background:var(--surface); color:var(--ink); cursor:pointer; font-family:var(--mono);
+    font-size:.78rem; text-align:left; line-height:1.35}
+  .mode span{display:block; font-family:var(--sans); font-size:.66rem; color:var(--ink-3); margin-top:2px}
+  .mode:hover{border-color:var(--accent)}
+  .mode[aria-pressed="true"]{border-color:var(--accent); background:var(--accent-soft); color:var(--accent)}
+  .mode[aria-pressed="true"] span{color:var(--accent)}
+  .mode[data-m="down"][aria-pressed="true"],
+  .mode[data-m="flaky"][aria-pressed="true"]{border-color:var(--crit); background:transparent; color:var(--crit)}
+  .mode[data-m="down"][aria-pressed="true"] span,
+  .mode[data-m="flaky"][aria-pressed="true"] span{color:var(--crit)}
+
+  .lanes{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px;
+    background:var(--con-rule); border:1px solid var(--con-rule); border-radius:10px 10px 0 0; overflow:hidden}
+  @media (max-width:700px){ .lanes{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  .lane{background:var(--con-bg); padding:11px 11px 13px; min-height:132px}
+  .lane h4{font-family:var(--mono); font-size:.62rem; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--con-ink-2); font-weight:500; display:flex; justify-content:space-between; gap:6px}
+  .lane h4 b{color:var(--con-ink); font-variant-numeric:tabular-nums}
+  .chips{display:flex; flex-wrap:wrap; gap:5px; margin-top:10px}
+  .chip-msg{font-family:var(--mono); font-size:.64rem; padding:3px 6px; border-radius:3px;
+    border:1px solid var(--con-rule); color:var(--con-ink-2); background:var(--con-bg-2);
+    animation:pop .22s ease}
+  @keyframes pop{from{opacity:0; transform:scale(.88)}to{opacity:1; transform:none}}
+  .chip-msg.f{border-color:var(--con-acc); color:var(--con-acc)}
+  .chip-msg.w{border-color:var(--con-warn); color:var(--con-warn)}
+  .chip-msg.d{border-color:var(--con-ok); color:var(--con-ok)}
+  .chip-msg.x{border-color:var(--con-crit); color:var(--con-crit)}
+  .lane.dl{background:#120E13}
+
+  .wf{display:flex; flex-direction:column; gap:5px; margin-top:12px}
+  .wfrow{display:grid; grid-template-columns:52px 1fr; gap:9px; align-items:center;
+    font-family:var(--mono); font-size:.66rem; color:var(--ink-3)}
+  .wftrack{display:flex; gap:2px; align-items:center; height:15px}
+  .wfseg{height:15px; border-radius:2px; min-width:3px}
+  .wfseg.ok{background:var(--ok)} .wfseg.err{background:var(--crit)}
+  .wfgap{height:3px; border-radius:2px; background:var(--rule-2); opacity:.8}
+  .wfend{font-family:var(--mono); font-size:.62rem; margin-left:5px; white-space:nowrap}
+
+  .legend{display:flex; flex-wrap:wrap; gap:14px; margin-top:14px; font-size:.74rem; color:var(--ink-3)}
+  .legend i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px;
+    vertical-align:-1px}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap topin">
+    <a class="brand" href="/"><span class="dot"></span>Integration&nbsp;Lab</a>
+    <span class="crumb">/ module 03 — retry &amp; dead letter</span>
+    <span class="chip live">live</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- ===================== THE RIG ===================== -->
+  <section><div class="wrap">
+    <div class="lab">Module 03 · Live</div>
+    <h1 style="margin-top:12px">Break it, and watch it recover.</h1>
+    <p class="lede">The endpoint below is real and deployed. Set it to fail, send traffic, and watch exponential backoff with jitter, idempotency keys and a dead-letter queue do their jobs — with the actual HTTP status codes and measured latencies, not a mock.</p>
+
+    <div class="rig" style="margin-top:26px">
+
+      <!-- controls -->
+      <div class="stack">
+        <div class="panel stack">
+          <div class="lab">Downstream health</div>
+          <div class="modes" role="group" aria-label="Endpoint mode">
+            <button class="mode" type="button" data-m="healthy" aria-pressed="true">healthy<span>200, ~120ms</span></button>
+            <button class="mode" type="button" data-m="flaky" aria-pressed="false">flaky<span>~50% return 503</span></button>
+            <button class="mode" type="button" data-m="down" aria-pressed="false">down<span>503 every time</span></button>
+            <button class="mode" type="button" data-m="slow" aria-pressed="false">slow<span>trips the 2s timeout</span></button>
+          </div>
+        </div>
+
+        <div class="panel stack">
+          <div class="lab">Traffic</div>
+          <div class="btnrow">
+            <button class="btn p sm" type="button" id="b-one">Send 1</button>
+            <button class="btn s sm" type="button" id="b-burst">Send burst of 8</button>
+          </div>
+          <div class="btnrow">
+            <button class="btn s sm" type="button" id="b-replay" disabled>Replay dead letters</button>
+            <button class="btn s sm" type="button" id="b-reset">Reset</button>
+          </div>
+          <div class="note"><b>Try this:</b> set <code>down</code>, send a burst, and let everything dead-letter. Then switch to <code>healthy</code> and press replay — nothing is lost, and nothing is applied twice.</div>
+        </div>
+      </div>
+
+      <!-- visual -->
+      <div>
+        <div class="lanes">
+          <div class="lane">
+            <h4><span>In flight</span><b id="n-flight">0</b></h4>
+            <div class="chips" id="l-flight"></div>
+          </div>
+          <div class="lane">
+            <h4><span>Backing off</span><b id="n-wait">0</b></h4>
+            <div class="chips" id="l-wait"></div>
+          </div>
+          <div class="lane">
+            <h4><span>Delivered</span><b id="n-done">0</b></h4>
+            <div class="chips" id="l-done"></div>
+          </div>
+          <div class="lane dl">
+            <h4><span>Dead letter</span><b id="n-dead">0</b></h4>
+            <div class="chips" id="l-dead"></div>
+          </div>
+        </div>
+
+        <div class="console" style="border-radius:0 0 10px 10px; border-top:0">
+          <div class="conhead">
+            <div class="t"><b>POST</b> /api/sim/endpoint</div>
+            <div class="dotstate on" id="dot"><i></i><span id="dot-t">healthy</span></div>
+          </div>
+          <div class="conbody" style="max-height:230px"><pre class="trace" id="trace"></pre></div>
+          <div class="meters">
+            <div class="meter"><div class="l">Requests</div><div class="v num" id="m-req">0</div></div>
+            <div class="meter"><div class="l">Delivered</div><div class="v num g" id="m-ok">0</div></div>
+            <div class="meter"><div class="l">Dead-lettered</div><div class="v num" id="m-dl">0</div></div>
+            <div class="meter"><div class="l">Success rate</div><div class="v num" id="m-rate">—</div></div>
+          </div>
+        </div>
+
+        <div class="legend">
+          <span><i style="background:var(--ok)"></i>successful attempt</span>
+          <span><i style="background:var(--crit)"></i>failed attempt (503 / timeout)</span>
+          <span><i style="background:var(--rule-2); height:4px; border-radius:2px"></i>backoff wait</span>
+        </div>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- ===================== WATERFALL ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Attempt waterfall</div>
+      <h2>Every attempt, to scale</h2>
+      <p>One row per message. Bars are real measured request durations; the thin connectors are the backoff waits between attempts. The gaps widen because that is the whole point.</p>
+    </div>
+    <div class="panel">
+      <div class="wf" id="wf"><p style="font-size:.85rem; color:var(--ink-3)">Send some traffic to populate this.</p></div>
+    </div>
+  </div></section>
+
+  <!-- ===================== BACKOFF CURVE ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">The schedule</div>
+      <h2>Exponential backoff, with jitter</h2>
+      <p>Doubling the wait is the easy half. The shaded band is the part that matters at scale: without randomisation, every client that failed during the same outage retries at the same instant and knocks the service over again the moment it recovers.</p>
+    </div>
+    <div class="diagram">
+      <svg viewBox="0 0 860 260" role="img" aria-label="Chart of retry delay by attempt number: base delays of 0.8, 1.6 and 3.2 seconds with a shaded jitter band spanning half to full of each delay.">
+        <!-- axes -->
+        <line class="dgrid" x1="62" y1="30" x2="62" y2="204"/>
+        <line class="dgrid" x1="62" y1="204" x2="806" y2="204"/>
+        <text class="dttl" x="62" y="22">DELAY BEFORE NEXT ATTEMPT</text>
+
+        <!-- y ticks: 0, 1s, 2s, 3s, 4s  (204 = 0s, 40 = 4s) -->
+        <line class="dgrid" x1="62" y1="163" x2="806" y2="163" opacity=".55"/>
+        <line class="dgrid" x1="62" y1="122" x2="806" y2="122" opacity=".55"/>
+        <line class="dgrid" x1="62" y1="81"  x2="806" y2="81"  opacity=".55"/>
+        <line class="dgrid" x1="62" y1="40"  x2="806" y2="40"  opacity=".55"/>
+        <text class="dsub" x="30" y="207">0s</text>
+        <text class="dsub" x="30" y="166">1s</text>
+        <text class="dsub" x="30" y="125">2s</text>
+        <text class="dsub" x="30" y="84">3s</text>
+        <text class="dsub" x="30" y="43">4s</text>
+
+        <!-- jitter bands: equal jitter = delay/2 .. delay -->
+        <rect class="dbox-a" x="140" y="171" width="86" height="16" rx="3" opacity=".55"/>
+        <rect class="dbox-a" x="344" y="138" width="86" height="33" rx="3" opacity=".55"/>
+        <rect class="dbox-a" x="548" y="73"  width="86" height="65" rx="3" opacity=".55"/>
+
+        <!-- nominal delay markers -->
+        <line class="dline-a" x1="140" y1="171" x2="226" y2="171"/>
+        <line class="dline-a" x1="344" y1="138" x2="430" y2="138"/>
+        <line class="dline-a" x1="548" y1="73"  x2="634" y2="73"/>
+
+        <!-- attempt labels -->
+        <text class="dsub" x="140" y="222">after attempt 1</text>
+        <text class="dlab" x="140" y="166">0.8s</text>
+        <text class="dsub" x="344" y="222">after attempt 2</text>
+        <text class="dlab" x="344" y="133">1.6s</text>
+        <text class="dsub" x="548" y="222">after attempt 3</text>
+        <text class="dlab" x="548" y="68">3.2s</text>
+
+        <!-- give up -->
+        <line class="dline-d" x1="752" y1="40" x2="752" y2="204"/>
+        <text class="dsub" x="700" y="222">attempt 4 fails</text>
+        <text class="dlab" x="676" y="33" style="fill:var(--crit)">→ dead letter</text>
+
+        <text class="dsub" x="140" y="243">shaded band = actual randomised wait (half to full)</text>
+      </svg>
+    </div>
+  </div></section>
+
+  <!-- ===================== WHY ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">Why this is harder than it looks</div>
+      <h2>Three things a retry loop gets wrong</h2>
+    </div>
+    <div class="prose">
+      <p><strong>Retrying immediately makes an outage worse.</strong> A service returning 503 is usually telling you it is already overloaded. Three fast retries from every client turns a brownout into an outage. The delay is not politeness — it is the mechanism that lets the downstream recover.</p>
+      <p><strong>Synchronised retries cause a second outage.</strong> If every client backs off by exactly one second, every client that failed during the same window returns at exactly the same instant. The service comes up, takes the full thundering herd, and falls over again. Jitter — randomising each client’s wait within a range — is what turns a spike back into a spread.</p>
+      <p><strong>A timeout is not a failure.</strong> This is the one that quietly corrupts data. When a request times out, you do not know whether the write landed. Retrying may apply it twice. An <em>idempotency key</em> is what makes that safe: the server records the key on first success, and a retry carrying the same key returns the original result without re-applying anything. Try it — every message here carries one, and the <code>replay</code> flag in the trace shows when the server recognised it.</p>
+      <p>And once the retry budget is spent, the message has to go somewhere inspectable. A <strong>dead-letter queue</strong> is the difference between “we lost seventeen orders last Tuesday and found out at month-end” and “seventeen orders are queued, here they are, replay when the vendor is back.”</p>
+    </div>
+  </div></section>
+
+  <!-- ===================== RULES ===================== -->
+  <section><div class="wrap">
+    <div class="shead">
+      <div class="lab">What this implements</div>
+      <h2>The rules, and where they come from</h2>
+    </div>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Rule</th><th>Here</th><th>Precedent</th></tr></thead>
+        <tbody>
+          <tr><td><b>Exponential backoff</b></td><td>800ms, doubling per attempt</td><td>Standard across AWS SDKs, Google APIs, Stripe</td></tr>
+          <tr><td><b>Equal jitter</b></td><td>Actual wait is random between half and full of the nominal delay</td><td>AWS Architecture Blog, “Exponential Backoff and Jitter”</td></tr>
+          <tr><td><b>Bounded attempts</b></td><td>4, then dead-letter</td><td>Retrying forever is a queue that never drains</td></tr>
+          <tr><td><b>Idempotency keys</b></td><td>Per-message key; server no-ops a repeat</td><td>Stripe’s <code>Idempotency-Key</code> header</td></tr>
+          <tr><td><b>Honour <code>Retry-After</code></b></td><td>Sent by the endpoint on 503 and respected as a floor</td><td>RFC 9110 §10.2.3</td></tr>
+          <tr><td><b>Dead-letter with replay</b></td><td>Failed messages held and re-drivable</td><td>AWS SQS redrive</td></tr>
+          <tr><td><b>Timeouts are failures</b></td><td>2s client timeout, aborts and counts as an attempt</td><td>A request with no deadline is a leak</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:20px; font-size:.87rem; color:var(--ink-2)">
+      Source: <a href="https://github.com/ivantsangwork/integration-lab/blob/main/functions/api/sim/endpoint.ts"><code>functions/api/sim/endpoint.ts</code></a> ·
+      <a href="https://github.com/ivantsangwork/integration-lab/blob/main/public/retry/index.html"><code>public/retry/index.html</code></a>
+    </p>
+    <p style="margin-top:18px"><a class="btn s" href="/">← Back to the lab</a></p>
+  </div></section>
+
+  <footer><div class="wrap">
+    <p><b>Live module.</b> Requests go to a real deployed endpoint and the latencies shown are measured, not scripted. The only thing staged is the failure itself — you choose when the downstream misbehaves, which is the one thing you can’t ask a production vendor to do on demand.</p>
+  </div></footer>
+
+</main>
+
+<script>
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+
+  var MAX_ATTEMPTS = 4, BASE_MS = 800, TIMEOUT_MS = 2000;
+  var mode = "healthy", seq = 0;
+  var stats = { req:0, ok:0, dead:0 };
+  var lanes = { flight:[], wait:[], done:[], dead:[] };
+  var deadLetters = [], rows = [];
+
+  var wait = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+
+  function stamp(){
+    var d = new Date();
+    return d.toTimeString().slice(0,8) + "." + String(d.getMilliseconds()).padStart(3,"0");
+  }
+  function log(html){
+    var t = $("trace");
+    t.innerHTML += '<span class="m">' + stamp() + "</span>  " + html + "\n";
+    t.parentElement.scrollTop = t.parentElement.scrollHeight;
+  }
+
+  function renderLanes(){
+    [["flight","l-flight","f"],["wait","l-wait","w"],["done","l-done","d"],["dead","l-dead","x"]]
+      .forEach(function(p){
+        var arr = lanes[p[0]], el = $(p[1]);
+        el.innerHTML = arr.slice(-14).map(function(m){
+          return '<span class="chip-msg ' + p[2] + '">' + m + "</span>";
+        }).join("");
+      });
+    $("n-flight").textContent = lanes.flight.length;
+    $("n-wait").textContent   = lanes.wait.length;
+    $("n-done").textContent   = lanes.done.length;
+    $("n-dead").textContent   = lanes.dead.length;
+    $("b-replay").disabled = deadLetters.length === 0;
+  }
+  function move(id, from, to){
+    var i = lanes[from].indexOf(id);
+    if (i > -1) lanes[from].splice(i,1);
+    if (to) lanes[to].push(id);
+    renderLanes();
+  }
+  function bump(){
+    $("m-req").textContent = stats.req;
+    $("m-ok").textContent  = stats.ok;
+    var dl = $("m-dl");
+    dl.textContent = stats.dead;
+    dl.className = "v num" + (stats.dead ? " c" : "");
+    var total = stats.ok + stats.dead;
+    $("m-rate").textContent = total ? Math.round(stats.ok/total*100) + "%" : "—";
+  }
+
+  function renderWaterfall(){
+    var wf = $("wf");
+    if (!rows.length){ return; }
+    wf.innerHTML = rows.slice(-9).reverse().map(function(r){
+      var track = r.segs.map(function(s){
+        return s.kind === "gap"
+          ? '<span class="wfgap" style="width:' + Math.max(3, Math.round(s.ms/14)) + 'px"></span>'
+          : '<span class="wfseg ' + (s.ok ? "ok" : "err") + '" style="width:' +
+              Math.max(4, Math.round(s.ms/6)) + 'px" title="attempt ' + s.n + " · " +
+              Math.round(s.ms) + "ms · " + s.status + '"></span>';
+      }).join("");
+      var end = r.dead
+        ? '<span class="wfend" style="color:var(--crit)">dead-lettered</span>'
+        : '<span class="wfend" style="color:var(--ok)">delivered · ' + r.segs.filter(function(s){return s.kind!=="gap";}).length + ' attempt' + (r.segs.filter(function(s){return s.kind!=="gap";}).length>1?"s":"") + "</span>";
+      return '<div class="wfrow"><span>' + r.id + '</span><span class="wftrack">' + track + end + "</span></div>";
+    }).join("");
+  }
+
+  // ------------------------------------------------------------ delivery
+  async function deliver(id, key){
+    var row = { id:id, segs:[], dead:false };
+    rows.push(row);
+    lanes.flight.push(id); renderLanes();
+
+    for (var attempt = 1; attempt <= MAX_ATTEMPTS; attempt++){
+      var t0 = performance.now(), ctl = new AbortController();
+      var timer = setTimeout(function(){ ctl.abort(); }, TIMEOUT_MS);
+      stats.req++; bump();
+
+      var status = 0, body = null, timedOut = false;
+      try {
+        var res = await fetch("/api/sim/endpoint?mode=" + mode, {
+          method: "POST",
+          headers: { "Idempotency-Key": key, "Content-Type": "application/json" },
+          body: JSON.stringify({ id:id, attempt:attempt }),
+          signal: ctl.signal
+        });
+        status = res.status;
+        body = await res.json().catch(function(){ return null; });
+      } catch (e) {
+        timedOut = true;
+      }
+      clearTimeout(timer);
+
+      var ms = performance.now() - t0;
+      row.segs.push({ kind:"req", n:attempt, ms:ms, ok:status === 200, status: timedOut ? "timeout" : status });
+      renderWaterfall();
+
+      if (status === 200){
+        stats.ok++; bump();
+        move(id, attempt === 1 ? "flight" : "wait", "done");
+        log("  " + id + '  attempt ' + attempt + '  <span class="ok">200</span>  ' + Math.round(ms) + "ms"
+            + (body && body.replay ? '  <span class="wn">replay — not applied twice</span>' : ""));
+        return;
+      }
+
+      log("  " + id + "  attempt " + attempt + "  "
+          + (timedOut ? '<span class="cr">timeout</span>  ' + TIMEOUT_MS + "ms"
+                      : '<span class="cr">' + status + "</span>  " + Math.round(ms) + "ms"));
+
+      if (attempt === MAX_ATTEMPTS){
+        row.dead = true;
+        stats.dead++; bump();
+        deadLetters.push({ id:id, key:key });
+        move(id, attempt === 1 ? "flight" : "wait", "dead");
+        log("  " + id + '  <span class="cr">retry budget spent</span> → <span class="wn">dead letter</span>');
+        renderWaterfall();
+        return;
+      }
+
+      // equal jitter: half the nominal delay, plus a random half
+      var nominal = BASE_MS * Math.pow(2, attempt - 1);
+      var delay = Math.round(nominal/2 + Math.random() * nominal/2);
+      row.segs.push({ kind:"gap", ms:delay });
+      move(id, attempt === 1 ? "flight" : "wait", "wait");
+      log("  " + id + '  <span class="m">backing off ' + delay + "ms  (nominal " + nominal + "ms)</span>");
+      renderWaterfall();
+      await wait(delay);
+    }
+  }
+
+  function send(n){
+    for (var i = 0; i < n; i++){
+      seq++;
+      var id = "msg-" + String(seq).padStart(3,"0");
+      deliver(id, id + "-" + Math.random().toString(36).slice(2,8));
+    }
+  }
+
+  // ------------------------------------------------------------ controls
+  Array.prototype.forEach.call(document.querySelectorAll(".mode"), function(b){
+    b.addEventListener("click", function(){
+      mode = b.dataset.m;
+      Array.prototype.forEach.call(document.querySelectorAll(".mode"), function(o){
+        o.setAttribute("aria-pressed", String(o === b));
+      });
+      var d = $("dot");
+      d.className = "dotstate " + (mode === "healthy" ? "on" : mode === "down" ? "bad" : "warn");
+      $("dot-t").textContent = mode;
+      log('<span class="ac">downstream → ' + mode + "</span>");
+    });
+  });
+
+  $("b-one").addEventListener("click", function(){ send(1); });
+  $("b-burst").addEventListener("click", function(){
+    log('<span class="ac">burst of 8</span>  <span class="m">mode=' + mode + "</span>");
+    send(8);
+  });
+
+  $("b-replay").addEventListener("click", function(){
+    var batch = deadLetters.splice(0, deadLetters.length);
+    lanes.dead = [];
+    log('<span class="ac">redrive</span>  ' + batch.length + " dead letter" + (batch.length>1?"s":"")
+        + '  <span class="m">same idempotency keys</span>');
+    stats.dead = Math.max(0, stats.dead - batch.length);
+    bump(); renderLanes();
+    batch.forEach(function(d){ deliver(d.id, d.key); });
+  });
+
+  $("b-reset").addEventListener("click", function(){
+    lanes = { flight:[], wait:[], done:[], dead:[] };
+    stats = { req:0, ok:0, dead:0 };
+    deadLetters = []; rows = []; seq = 0;
+    $("trace").innerHTML = "";
+    $("wf").innerHTML = '<p style="font-size:.85rem; color:var(--ink-3)">Send some traffic to populate this.</p>';
+    bump(); renderLanes();
+    log('<span class="m">reset · downstream ' + mode + "</span>");
+  });
+
+  log('<span class="m">ready · downstream healthy · 4 attempts · base 800ms · timeout 2000ms</span>');
+  bump(); renderLanes();
+})();
+</script>
+</body>
+</html>
