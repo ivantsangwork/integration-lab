@@ -3,29 +3,35 @@ compatibility_date = "2026-09-01"
 pages_build_output_dir = "public"
 
 # ---------------------------------------------------------------------------
-# Non-secret config. Set PUBLIC_ORIGIN to the pages.dev URL first, then change
-# it to the custom domain once DNS is live — it must match the redirect URI
-# registered in Google Cloud Console exactly, including scheme and no trailing
-# slash.
+# Non-secret config. PUBLIC_ORIGIN must match the redirect URI registered in
+# Google Cloud Console exactly — same scheme, no trailing slash. Change it to
+# the custom domain once DNS is live, and update Google and Meta at the same
+# time.
 # ---------------------------------------------------------------------------
 [vars]
-PUBLIC_ORIGIN = "https://integration-lab.pages.dev"
+PUBLIC_ORIGIN = "https://integration-lab-c34.pages.dev"
 
 # ---------------------------------------------------------------------------
-# KV — stores recent webhook deliveries so the live trace panel has something
-# to show, and so a redelivered message id is recognised as a duplicate.
+# KV — not needed until Module 04 (the WhatsApp webhook) goes live. It stores
+# recent deliveries for the trace panel and makes a redelivered message id a
+# no-op instead of a duplicate action.
 #
-#   npx wrangler kv namespace create INBOX
+# To enable it later:
+#   1. Dashboard → Storage & databases → KV → Create namespace, name it INBOX
+#      (or run: npx wrangler kv namespace create INBOX)
+#   2. Uncomment the block below and paste the real id
+#   3. Commit and push — Pages redeploys automatically
 #
-# then paste the returned id below.
+# Leaving a placeholder id here fails the deploy with Error 8000022, so the
+# block stays commented until the namespace actually exists.
+#
+# [[kv_namespaces]]
+# binding = "INBOX"
+# id = "paste-the-real-hex-id-here"
 # ---------------------------------------------------------------------------
-[[kv_namespaces]]
-binding = "INBOX"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
 
 # ---------------------------------------------------------------------------
 # Secrets are NOT set here — this file is committed to git.
-# Set each one with:
 #
 #   npx wrangler pages secret put GOOGLE_CLIENT_SECRET
 #   npx wrangler pages secret put SESSION_SECRET
@@ -33,5 +39,6 @@ id = "REPLACE_WITH_KV_NAMESPACE_ID"
 #   npx wrangler pages secret put META_VERIFY_TOKEN
 #   npx wrangler pages secret put OPENAI_API_KEY
 #
+# Or in the dashboard: the project → Settings → Variables and Secrets.
 # GOOGLE_CLIENT_ID is not a secret and can live in [vars] if you prefer.
 # ---------------------------------------------------------------------------
